@@ -226,6 +226,15 @@ input:focus-visible,
   text-align: center;
 }
 
+.button-new-project {
+  color: var(--danger);
+}
+
+.button-new-project:hover {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+  background: var(--danger-soft);
+}
+
 .button,
 .icon-button,
 .play-button {

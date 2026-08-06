@@ -27,6 +27,8 @@ No dependency installation or backend is required.
 
 Use the **Go to** field or a recorded-position time to move the playhead to an exact second. Dancer names can be edited beside the selected dancer controls. Undo and redo buttons cover formation edits, and Ctrl/Cmd+Z plus Ctrl/Cmd+Shift+Z work whenever focus is outside an input field.
 
+Use **New project** to clear the title, dancers, recorded positions, and playhead after a confirmation. The reset is undoable and keeps locally loaded music or video in place.
+
 Up to 50 dancers are supported. Audio and video files remain local to the browser and are not included in exported choreography JSON files or edit history. Choreography data is autosaved in the browser and can also be exported or imported as JSON. Importing asks for confirmation, remains undoable, and keeps loaded local media in place. Music and video have independent volume controls. The light/dark appearance toggle follows the device preference on first use and then remembers the user's choice in that browser.
 
 ## Test it

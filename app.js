@@ -64,6 +64,7 @@
     keyframeList: document.querySelector("#keyframe-list"),
     keyframeTrack: document.querySelector("#keyframe-track"),
     markerLayer: document.querySelector("#marker-layer"),
+    newProjectButton: document.querySelector("#new-project-button"),
     playButton: document.querySelector("#play-button"),
     playIcon: document.querySelector("#play-icon"),
     projectTitle: document.querySelector("#project-title"),
@@ -298,6 +299,37 @@
       x: clamp(50 + Math.cos(angle) * ring, 5, 95),
       y: clamp(50 + Math.sin(angle) * ring, 7, 90),
     };
+  }
+
+  function startNewProject() {
+    const shouldReset = window.confirm(
+      "Start a new project? This clears the title, dancers, recorded positions, and playhead. You can undo it. Loaded audio and video will stay in place.",
+    );
+    if (!shouldReset) return;
+
+    pausePlayback();
+    const mediaDurations = getLoadedMediaPlayers()
+      .map((player) => player.duration)
+      .filter((duration) => Number.isFinite(duration) && duration > 0);
+    const freshDuration = clamp(mediaDurations.length > 0
+      ? Math.max(...mediaDurations)
+      : state.audioUrl || state.videoUrl
+        ? state.duration
+        : 60, 1, 3600);
+
+    const changed = commitDocumentEdit("start new project", () => {
+      state.projectTitle = "Untitled choreography";
+      state.dancerCounter = 0;
+      state.dancers = [];
+      state.duration = freshDuration;
+      state.currentTime = 0;
+      state.selectedDancerId = null;
+      state.markerElements.forEach((marker) => marker.remove());
+      state.markerElements.clear();
+    });
+    setCurrentTime(0);
+    elements.addDancerButton.focus();
+    showToast(changed ? "New project started. Undo is available." : "This project is already blank.");
   }
 
   function addDancer() {
@@ -1111,6 +1143,7 @@
 
   function bindEvents() {
     elements.addDancerButton.addEventListener("click", addDancer);
+    elements.newProjectButton.addEventListener("click", startNewProject);
     elements.themeToggle.addEventListener("click", toggleTheme);
     elements.undoButton.addEventListener("click", undoDocumentEdit);
     elements.redoButton.addEventListener("click", redoDocumentEdit);
