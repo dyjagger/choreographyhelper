@@ -25,7 +25,9 @@ No dependency installation or backend is required.
 4. Move later in the timeline and drag the dancer again.
 5. Press play to see a straight-line movement between the positions.
 
-Up to 50 dancers are supported. Audio and video files remain local to the browser and are not included in exported choreography JSON files. Choreography data is autosaved in the browser and can also be exported or imported as JSON. Music and video have independent volume controls.
+Use the **Go to** field or a recorded-position time to move the playhead to an exact second. Dancer names can be edited beside the selected dancer controls. Undo and redo buttons cover formation edits, and Ctrl/Cmd+Z plus Ctrl/Cmd+Shift+Z work whenever focus is outside an input field.
+
+Up to 50 dancers are supported. Audio and video files remain local to the browser and are not included in exported choreography JSON files or edit history. Choreography data is autosaved in the browser and can also be exported or imported as JSON. Importing asks for confirmation, remains undoable, and keeps loaded local media in place. Music and video have independent volume controls.
 
 ## Test it
 

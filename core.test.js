@@ -3,12 +3,25 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  MAX_DANCER_COUNTER,
+  MAX_DANCER_ID_LENGTH,
+  MAX_TOTAL_KEYFRAMES,
+  areDocumentSnapshotsEqual,
+  createUniqueLocalDancerId,
+  createHistory,
   formatTime,
   getLatestKeyframeTime,
   getPositionAtTime,
+  getNextAvailableDancerNumber,
   hasPointerMoved,
   isValidProjectData,
+  normalizeDancerName,
+  normalizeProjectTitle,
   normalizeKeyframes,
+  pushHistory,
+  redoHistory,
+  shouldPauseAfterPlaybackStartSettles,
+  undoHistory,
   upsertKeyframe,
 } = require("./core.js");
 
@@ -116,4 +129,167 @@ test("fifty dancers with multiple positions interpolate independently", () => {
   assert.equal(positions.length, 50);
   assert.deepEqual(positions[0], { x: 5, y: 50 });
   assert.deepEqual(positions[49], { x: 54, y: 50 });
+});
+
+test("history is capped, clears redo after a new edit, and round-trips exactly", () => {
+  let history = createHistory(2);
+  history = pushHistory(history, { label: "first", snapshot: { value: 0 } });
+  history = pushHistory(history, { label: "second", snapshot: { value: 1 } });
+  history = pushHistory(history, { label: "third", snapshot: { value: 2 } });
+  assert.deepEqual(history.past.map((entry) => entry.label), ["second", "third"]);
+
+  const undone = undoHistory(history, { label: "third", snapshot: { value: 3 } });
+  assert.deepEqual(undone.entry.snapshot, { value: 2 });
+  assert.deepEqual(undone.history.future[0].snapshot, { value: 3 });
+
+  const redone = redoHistory(undone.history, { label: "third", snapshot: { value: 2 } });
+  assert.deepEqual(redone.entry.snapshot, { value: 3 });
+  assert.deepEqual(redone.history.past.at(-1).snapshot, { value: 2 });
+
+  const replaced = pushHistory(undone.history, { label: "replacement", snapshot: { value: 9 } });
+  assert.equal(replaced.future.length, 0);
+});
+
+test("empty history steps are deterministic no-ops", () => {
+  const history = createHistory();
+  assert.deepEqual(undoHistory(history, { value: 1 }), { history, entry: null });
+  assert.deepEqual(redoHistory(history, { value: 1 }), { history, entry: null });
+});
+
+test("default edit history retains only the latest fifty entries", () => {
+  let history = createHistory();
+  for (let index = 0; index < 60; index += 1) {
+    history = pushHistory(history, { label: `edit-${index}`, snapshot: index });
+  }
+  assert.equal(history.past.length, 50);
+  assert.equal(history.past[0].snapshot, 10);
+  assert.equal(history.past.at(-1).snapshot, 59);
+});
+
+test("dancer names are trimmed, normalized, bounded, and given a fallback", () => {
+  assert.equal(normalizeDancerName("  Ada   Lovelace  "), "Ada Lovelace");
+  assert.equal(normalizeDancerName("   ", "Dancer 7"), "Dancer 7");
+  assert.equal(normalizeDancerName("abcdefgh", "Dancer", 5), "abcde");
+});
+
+test("project validation bounds IDs, dancer counters, and total keyframes", () => {
+  const frame = { time: 0, x: 50, y: 50 };
+  const base = { version: 1, duration: 60, dancerCounter: 1, dancers: [{ id: "dancer-1", keyframes: [frame] }] };
+  assert.equal(isValidProjectData(base), true);
+  assert.equal(isValidProjectData({ ...base, dancerCounter: MAX_DANCER_COUNTER + 1 }), false);
+  assert.equal(isValidProjectData({
+    ...base,
+    dancers: [{ id: "x".repeat(MAX_DANCER_ID_LENGTH + 1), keyframes: [frame] }],
+  }), false);
+
+  const fiveThousandFrames = Array.from({ length: 5000 }, (_, index) => ({
+    time: index * 0.02,
+    x: 50,
+    y: 50,
+  }));
+  const oversized = {
+    duration: 120,
+    dancers: Array.from({ length: Math.floor(MAX_TOTAL_KEYFRAMES / 5000) + 1 }, (_, index) => ({
+      id: `bulk-${index}`,
+      keyframes: fiveThousandFrames,
+    })),
+  };
+  assert.equal(isValidProjectData(oversized), false);
+});
+
+test("an accepted boundary dancer counter remains valid through every remaining add", () => {
+  const dancers = [];
+  let dancerCounter = MAX_DANCER_COUNTER - 50;
+  assert.equal(isValidProjectData({ duration: 60, dancerCounter, dancers }), true);
+
+  for (let index = 0; index < 50; index += 1) {
+    dancerCounter += 1;
+    dancers.push({
+      id: `boundary-${index}`,
+      number: dancerCounter,
+      keyframes: [{ time: 0, x: 50, y: 50 }],
+    });
+    assert.equal(isValidProjectData({ duration: 60, dancerCounter, dancers }), true);
+  }
+
+  assert.equal(isValidProjectData({ duration: 60, dancerCounter: MAX_DANCER_COUNTER, dancers: [] }), true);
+  assert.equal(isValidProjectData({ duration: 60, dancerCounter: MAX_DANCER_COUNTER + 1, dancers: [] }), false);
+});
+
+test("maximum counters stay valid through removal and undo-style restoration", () => {
+  const dancers = Array.from({ length: 50 }, (_, index) => ({
+    id: `max-counter-${index + 1}`,
+    number: index + 1,
+    keyframes: [{ time: 0, x: 50, y: 50 }],
+  }));
+  const fullProject = { duration: 60, dancerCounter: MAX_DANCER_COUNTER, dancers };
+  assert.equal(isValidProjectData(fullProject), true);
+
+  for (const removedNumber of [1, 25, 50]) {
+    const afterRemoval = {
+      ...fullProject,
+      dancers: dancers.filter((dancer) => dancer.number !== removedNumber),
+    };
+    assert.equal(isValidProjectData(afterRemoval), true);
+    const restoredSnapshot = JSON.parse(JSON.stringify(fullProject));
+    assert.equal(isValidProjectData(restoredSnapshot), true);
+  }
+});
+
+test("a maximum-counter project can recycle numbers and add safely to fifty dancers", () => {
+  const project = { duration: 60, dancerCounter: MAX_DANCER_COUNTER, dancers: [] };
+  while (project.dancers.length < 50) {
+    const allocation = getNextAvailableDancerNumber(project.dancers, project.dancerCounter);
+    assert.ok(allocation);
+    project.dancerCounter = allocation.dancerCounter;
+    project.dancers.push({
+      id: createUniqueLocalDancerId(project.dancers, allocation.number),
+      number: allocation.number,
+      keyframes: [{ time: 0, x: 50, y: 50 }],
+    });
+    assert.equal(isValidProjectData(project), true);
+  }
+  assert.equal(new Set(project.dancers.map((dancer) => dancer.id)).size, 50);
+  assert.equal(new Set(project.dancers.map((dancer) => dancer.number)).size, 50);
+});
+
+test("document transaction equality includes selection and playhead state", () => {
+  const project = { version: 1, duration: 60, dancers: [] };
+  const base = { project, currentTime: 10, selectedDancerId: null };
+  assert.equal(areDocumentSnapshotsEqual(base, { ...base }), true);
+  assert.equal(areDocumentSnapshotsEqual(base, { ...base, currentTime: 12 }), false);
+  assert.equal(areDocumentSnapshotsEqual(base, { ...base, selectedDancerId: "dancer-1" }), false);
+});
+
+test("a stale playback start cannot pause a newer active start", () => {
+  assert.equal(shouldPauseAfterPlaybackStartSettles(1, 3, true, false), false);
+  assert.equal(shouldPauseAfterPlaybackStartSettles(1, 3, false, true), false);
+  assert.equal(shouldPauseAfterPlaybackStartSettles(1, 2, false, false), true);
+  assert.equal(shouldPauseAfterPlaybackStartSettles(3, 3, false, true), true);
+});
+
+test("blank project titles normalize across save, restore, and history round trips", () => {
+  const normalizedTitle = normalizeProjectTitle("   \n  ");
+  assert.equal(normalizedTitle, "Untitled choreography");
+
+  const saved = JSON.stringify({ projectTitle: normalizedTitle });
+  const restored = JSON.parse(saved);
+  restored.projectTitle = normalizeProjectTitle(restored.projectTitle);
+  assert.equal(restored.projectTitle, "Untitled choreography");
+
+  const blankSnapshot = { project: { projectTitle: normalizeProjectTitle("") }, currentTime: 0, selectedDancerId: null };
+  const namedSnapshot = { project: { projectTitle: normalizeProjectTitle("Finale") }, currentTime: 0, selectedDancerId: null };
+  let history = pushHistory(createHistory(), { label: "edit project title", snapshot: blankSnapshot });
+  const undone = undoHistory(history, { label: "edit project title", snapshot: namedSnapshot });
+  assert.equal(undone.entry.snapshot.project.projectTitle, "Untitled choreography");
+  const redone = redoHistory(undone.history, { label: "edit project title", snapshot: blankSnapshot });
+  assert.equal(redone.entry.snapshot.project.projectTitle, "Finale");
+});
+
+test("legacy version-one data may omit optional presentation fields", () => {
+  assert.equal(isValidProjectData({
+    version: 1,
+    duration: 60,
+    dancers: [{ id: "legacy", keyframes: [{ time: 0, x: 50, y: 50 }] }],
+  }), true);
 });

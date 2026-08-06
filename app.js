@@ -2,17 +2,31 @@
   "use strict";
 
   const {
+    MAX_DANCER_COUNTER,
+    TIME_EPSILON,
+    areDocumentSnapshotsEqual,
     clamp,
+    createUniqueLocalDancerId,
+    createHistory,
     formatTime,
     getLatestKeyframeTime,
+    getNextAvailableDancerNumber,
     getPositionAtTime,
     hasPointerMoved,
     isValidProjectData,
+    normalizeDancerName,
     normalizeKeyframes,
+    normalizeProjectTitle,
+    pushHistory,
+    redoHistory,
+    shouldPauseAfterPlaybackStartSettles,
+    undoHistory,
     upsertKeyframe,
   } = window.ChoreoCore;
 
   const MAX_DANCERS = 50;
+  const HISTORY_LIMIT = 50;
+  const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
   const STORAGE_KEY = "formation-studio-project-v1";
   const PALETTE = [
     "#7156d9",
@@ -39,6 +53,8 @@
     coordinateEditor: document.querySelector("#coordinate-editor"),
     dancerCount: document.querySelector("#dancer-count"),
     dancerList: document.querySelector("#dancer-list"),
+    dancerNameEditor: document.querySelector("#dancer-name-editor"),
+    dancerNameInput: document.querySelector("#dancer-name-input"),
     durationInput: document.querySelector("#duration-input"),
     emptyStage: document.querySelector("#empty-stage"),
     exportButton: document.querySelector("#export-button"),
@@ -50,6 +66,8 @@
     playButton: document.querySelector("#play-button"),
     playIcon: document.querySelector("#play-icon"),
     projectTitle: document.querySelector("#project-title"),
+    redoButton: document.querySelector("#redo-button"),
+    replaceLocalSaveButton: document.querySelector("#replace-local-save-button"),
     removeAudioButton: document.querySelector("#remove-audio-button"),
     recordCoordinatesButton: document.querySelector("#record-coordinates-button"),
     restartButton: document.querySelector("#restart-button"),
@@ -57,8 +75,10 @@
     selectionText: document.querySelector("#selection-text"),
     stage: document.querySelector("#stage"),
     timeline: document.querySelector("#timeline"),
+    timeInput: document.querySelector("#time-input"),
     toast: document.querySelector("#toast"),
     totalTime: document.querySelector("#total-time"),
+    undoButton: document.querySelector("#undo-button"),
     videoDetails: document.querySelector("#video-details"),
     videoDuration: document.querySelector("#video-duration"),
     videoFileButton: document.querySelector("#video-file-button"),
@@ -74,23 +94,29 @@
   };
 
   const state = {
+    activeKeyframeTime: null,
     currentTime: 0,
     dancerCounter: 0,
     dancers: [],
     duration: 60,
+    history: createHistory(HISTORY_LIMIT),
     isPlaying: false,
+    isStartingPlayback: false,
     markerElements: new Map(),
     playbackOrigin: 0,
+    playbackRequestId: 0,
     playbackStartedAt: 0,
     projectTitle: "Untitled choreography",
     rafId: null,
     selectedDancerId: null,
+    storageWriteBlocked: false,
     audioUrl: null,
     videoUrl: null,
   };
 
   let saveTimer = null;
   let toastTimer = null;
+  let projectTitleEditSnapshot = null;
 
   function getSelectedDancer() {
     return state.dancers.find((dancer) => dancer.id === state.selectedDancerId) || null;
@@ -123,6 +149,122 @@
     return updateDuration(Math.max(mediaDuration, allowKeyframeFloor ? latestFrame : 0));
   }
 
+  function captureDocumentSnapshot() {
+    return {
+      project: serializeProject(),
+      currentTime: state.currentTime,
+      selectedDancerId: state.selectedDancerId,
+    };
+  }
+
+  function updateHistoryControls() {
+    const undoEntry = state.history.past.at(-1) || null;
+    const redoEntry = state.history.future[0] || null;
+    elements.undoButton.disabled = !undoEntry;
+    elements.redoButton.disabled = !redoEntry;
+    elements.undoButton.setAttribute("aria-label", undoEntry ? `Undo ${undoEntry.label}` : "Undo");
+    elements.redoButton.setAttribute("aria-label", redoEntry ? `Redo ${redoEntry.label}` : "Redo");
+    elements.undoButton.title = undoEntry ? `Undo ${undoEntry.label}` : "Nothing to undo";
+    elements.redoButton.title = redoEntry ? `Redo ${redoEntry.label}` : "Nothing to redo";
+  }
+
+  function replaceDocumentData(project, options = {}) {
+    state.projectTitle = normalizeProjectTitle(project.projectTitle);
+    state.duration = clamp(project.duration, 1, 3600);
+    const highestDancerNumber = project.dancers.reduce((highest, dancer, index) => {
+      const candidate = Number(dancer.number);
+      const safeNumber = Number.isSafeInteger(candidate) && candidate > 0 && candidate <= 1000000
+        ? candidate
+        : index + 1;
+      return Math.max(highest, safeNumber);
+    }, 0);
+    state.dancerCounter = Math.max(Number(project.dancerCounter) || 0, project.dancers.length, highestDancerNumber);
+    state.dancers = project.dancers.map((dancer, index) => {
+      const candidateNumber = Number(dancer.number);
+      const number = Number.isSafeInteger(candidateNumber) && candidateNumber > 0 && candidateNumber <= 1000000
+        ? candidateNumber
+        : index + 1;
+      return {
+        id: dancer.id,
+        number,
+        name: normalizeDancerName(dancer.name, `Dancer ${number}`),
+        color: /^#[0-9a-f]{6}$/i.test(dancer.color) ? dancer.color : PALETTE[index % PALETTE.length],
+        keyframes: normalizeKeyframes(dancer.keyframes),
+      };
+    });
+    const latest = getLatestKeyframeTime(state.dancers);
+    state.duration = Math.max(state.duration, latest || 1);
+    const loadedMediaDurations = getLoadedMediaPlayers()
+      .map((player) => player.duration)
+      .filter((duration) => Number.isFinite(duration) && duration > 0);
+    if (loadedMediaDurations.length > 0) state.duration = Math.max(state.duration, ...loadedMediaDurations);
+    const requestedSelection = options.selectedDancerId;
+    state.selectedDancerId = state.dancers.some((dancer) => dancer.id === requestedSelection)
+      ? requestedSelection
+      : state.dancers[0]?.id || null;
+    state.currentTime = clamp(options.currentTime ?? 0, 0, state.duration);
+    state.markerElements.forEach((marker) => marker.remove());
+    state.markerElements.clear();
+  }
+
+  function commitDocumentEdit(label, mutation, options = {}) {
+    const before = options.beforeSnapshot || captureDocumentSnapshot();
+    const mutationResult = mutation();
+    const after = captureDocumentSnapshot();
+    if (mutationResult === false || areDocumentSnapshotsEqual(before, after)) {
+      if (options.render !== false) {
+        renderAll();
+        setCurrentTime(state.currentTime);
+      }
+      updateHistoryControls();
+      return false;
+    }
+    state.history = pushHistory(state.history, { label, snapshot: before });
+    if (options.render === false) queueSave();
+    else syncAfterDataChange();
+    updateHistoryControls();
+    return true;
+  }
+
+  function focusSelectedMarkerOrAdd() {
+    const marker = state.selectedDancerId ? state.markerElements.get(state.selectedDancerId) : null;
+    (marker || elements.addDancerButton).focus();
+  }
+
+  function restoreDocumentSnapshot(snapshot, options = {}) {
+    pausePlayback();
+    replaceDocumentData(snapshot.project, snapshot);
+    renderAll();
+    setCurrentTime(state.currentTime);
+    queueSave();
+    updateHistoryControls();
+    if (options.restoreFocus) focusSelectedMarkerOrAdd();
+  }
+
+  function undoDocumentEdit(options = {}) {
+    const entry = state.history.past.at(-1);
+    if (!entry) return;
+    const result = undoHistory(state.history, {
+      label: entry.label,
+      snapshot: captureDocumentSnapshot(),
+    });
+    state.history = result.history;
+    restoreDocumentSnapshot(result.entry.snapshot, options);
+    showToast(`Undid ${entry.label}.`);
+  }
+
+  function redoDocumentEdit(options = {}) {
+    const entry = state.history.future[0];
+    if (!entry) return;
+    const result = redoHistory(state.history, {
+      label: entry.label,
+      snapshot: captureDocumentSnapshot(),
+    });
+    state.history = result.history;
+    restoreDocumentSnapshot(result.entry.snapshot, options);
+    showToast(`Redid ${entry.label}.`);
+  }
+
   function createDefaultPosition(index) {
     const angle = index * 2.3999632297;
     const ring = Math.min(24, 4 + Math.sqrt(index + 1) * 5.5);
@@ -137,20 +279,26 @@
       showToast("The stage supports up to 50 dancers.");
       return;
     }
+    const numberAllocation = getNextAvailableDancerNumber(state.dancers, state.dancerCounter, MAX_DANCER_COUNTER);
+    if (!numberAllocation) {
+      showToast("No safe dancer number is available in this plan.");
+      return;
+    }
 
-    state.dancerCounter += 1;
-    const position = createDefaultPosition(state.dancers.length);
-    const dancer = {
-      id: `dancer-${Date.now()}-${state.dancerCounter}`,
-      number: state.dancerCounter,
-      name: `Dancer ${state.dancerCounter}`,
-      color: PALETTE[(state.dancerCounter - 1) % PALETTE.length],
-      keyframes: [{ time: state.currentTime, x: position.x, y: position.y }],
-    };
-
-    state.dancers.push(dancer);
-    state.selectedDancerId = dancer.id;
-    syncAfterDataChange();
+    let dancer = null;
+    commitDocumentEdit("add dancer", () => {
+      state.dancerCounter = numberAllocation.dancerCounter;
+      const position = createDefaultPosition(state.dancers.length);
+      dancer = {
+        id: createUniqueLocalDancerId(state.dancers, numberAllocation.number),
+        number: numberAllocation.number,
+        name: `Dancer ${numberAllocation.number}`,
+        color: PALETTE[(numberAllocation.number - 1) % PALETTE.length],
+        keyframes: [{ time: state.currentTime, x: position.x, y: position.y }],
+      };
+      state.dancers.push(dancer);
+      state.selectedDancerId = dancer.id;
+    });
     state.markerElements.get(dancer.id)?.focus();
     showToast(`${dancer.name} added at ${formatTime(state.currentTime)}.`);
   }
@@ -160,25 +308,32 @@
     if (!dancer) return;
     if (!window.confirm(`Remove ${dancer.name} and all of its recorded positions?`)) return;
 
-    const removedIndex = state.dancers.findIndex((item) => item.id === dancerId);
-    state.dancers = state.dancers.filter((item) => item.id !== dancerId);
-    state.markerElements.get(dancerId)?.remove();
-    state.markerElements.delete(dancerId);
-    if (state.selectedDancerId === dancerId) {
-      state.selectedDancerId = state.dancers[Math.min(removedIndex, state.dancers.length - 1)]?.id || null;
-    }
-    syncAfterDataChange();
+    commitDocumentEdit(`remove ${dancer.name}`, () => {
+      const removedIndex = state.dancers.findIndex((item) => item.id === dancerId);
+      state.dancers = state.dancers.filter((item) => item.id !== dancerId);
+      state.markerElements.get(dancerId)?.remove();
+      state.markerElements.delete(dancerId);
+      if (state.selectedDancerId === dancerId) {
+        state.selectedDancerId = state.dancers[Math.min(removedIndex, state.dancers.length - 1)]?.id || null;
+      }
+    });
     if (state.selectedDancerId) state.markerElements.get(state.selectedDancerId)?.focus();
     else elements.addDancerButton.focus();
     showToast(`${dancer.name} removed.`);
   }
 
-  function selectDancer(dancerId) {
+  function findDancerListButton(dancerId) {
+    return [...elements.dancerList.querySelectorAll(".dancer-row-main")]
+      .find((button) => button.dataset.dancerId === dancerId) || null;
+  }
+
+  function selectDancer(dancerId, options = {}) {
     if (!state.dancers.some((dancer) => dancer.id === dancerId)) return;
     state.selectedDancerId = dancerId;
     renderSelection();
     renderDancerList();
     renderMarkerPositions();
+    if (options.restoreListFocus) findDancerListButton(dancerId)?.focus();
   }
 
   function ensureMarkerElement(dancer) {
@@ -217,6 +372,7 @@
       marker.style.left = `${position.x}%`;
       marker.style.top = `${position.y}%`;
       marker.classList.toggle("is-selected", dancer.id === state.selectedDancerId);
+      marker.setAttribute("aria-pressed", String(dancer.id === state.selectedDancerId));
       marker.setAttribute("aria-label", `${dancer.name} at ${Math.round(position.x)} percent across and ${Math.round(position.y)} percent down.`);
     });
 
@@ -310,20 +466,41 @@
   function recordPosition(dancerId, position) {
     const dancer = state.dancers.find((item) => item.id === dancerId);
     if (!dancer) return;
-    dancer.keyframes = upsertKeyframe(dancer.keyframes, {
-      time: state.currentTime,
-      x: position.x,
-      y: position.y,
+    const changed = commitDocumentEdit(`move ${dancer.name}`, () => {
+      dancer.keyframes = upsertKeyframe(dancer.keyframes, {
+        time: state.currentTime,
+        x: position.x,
+        y: position.y,
+      });
     });
-    syncAfterDataChange();
-    showToast(`Position recorded at ${formatTime(state.currentTime)}.`);
+    if (changed) showToast(`Position recorded at ${formatTime(state.currentTime)}.`);
   }
 
   function removeKeyframe(dancerId, frameTime) {
     const dancer = state.dancers.find((item) => item.id === dancerId);
     if (!dancer || dancer.keyframes.length <= 1) return;
-    dancer.keyframes = dancer.keyframes.filter((frame) => Math.abs(frame.time - frameTime) > 0.015);
-    syncAfterDataChange();
+    const changed = commitDocumentEdit(`delete ${dancer.name} position`, () => {
+      dancer.keyframes = dancer.keyframes.filter((frame) => Math.abs(frame.time - frameTime) > TIME_EPSILON);
+    });
+    if (!changed) return;
+    const nearestFrame = dancer.keyframes.reduce((nearest, frame) => {
+      return !nearest || Math.abs(frame.time - frameTime) < Math.abs(nearest.time - frameTime) ? frame : nearest;
+    }, null);
+    const keyframeButton = [...elements.keyframeList.querySelectorAll(".keyframe-jump")]
+      .find((button) => button.dataset.keyframeIdentity === `${dancer.id}:${nearestFrame.time.toFixed(3)}`);
+    (keyframeButton || state.markerElements.get(dancer.id))?.focus();
+  }
+
+  function renameSelectedDancer() {
+    const dancer = getSelectedDancer();
+    if (!dancer) return;
+    const nextName = normalizeDancerName(elements.dancerNameInput.value, `Dancer ${dancer.number}`);
+    const previousName = dancer.name;
+    const changed = commitDocumentEdit(`rename ${previousName}`, () => {
+      dancer.name = nextName;
+    });
+    elements.dancerNameInput.value = changed ? nextName : dancer.name;
+    if (changed) showToast(`${previousName} renamed to ${nextName}.`);
   }
 
   function renderDancerList() {
@@ -347,7 +524,9 @@
       const selectButton = document.createElement("button");
       selectButton.type = "button";
       selectButton.className = "dancer-row-main";
-      selectButton.addEventListener("click", () => selectDancer(dancer.id));
+      selectButton.dataset.dancerId = dancer.id;
+      selectButton.setAttribute("aria-pressed", String(dancer.id === state.selectedDancerId));
+      selectButton.addEventListener("click", () => selectDancer(dancer.id, { restoreListFocus: true }));
 
       const swatch = document.createElement("span");
       swatch.className = "dancer-swatch";
@@ -383,33 +562,71 @@
     if (!dancer) {
       elements.selectionText.textContent = "No dancer selected";
       elements.coordinateEditor.classList.add("is-hidden");
+      elements.dancerNameEditor.classList.add("is-hidden");
       return;
     }
 
     const currentPosition = getPositionAtTime(dancer.keyframes, state.currentTime);
     elements.selectionText.textContent = `${dancer.name} · ${dancer.keyframes.length} recorded position${dancer.keyframes.length === 1 ? "" : "s"}`;
     elements.coordinateEditor.classList.remove("is-hidden");
+    elements.dancerNameEditor.classList.remove("is-hidden");
+    if (document.activeElement !== elements.dancerNameInput) elements.dancerNameInput.value = dancer.name;
     elements.xInput.value = currentPosition.x.toFixed(1);
     elements.yInput.value = currentPosition.y.toFixed(1);
     normalizeKeyframes(dancer.keyframes).forEach((frame) => {
       const dot = document.createElement("span");
       dot.className = "keyframe-dot";
       dot.style.left = `${(frame.time / state.duration) * 100}%`;
+      dot.dataset.keyframeTime = frame.time;
       elements.keyframeTrack.append(dot);
 
       const chip = document.createElement("span");
       chip.className = "keyframe-chip";
       chip.title = `x ${frame.x.toFixed(1)}, y ${frame.y.toFixed(1)}`;
-      chip.append(document.createTextNode(formatTime(frame.time)));
+      chip.dataset.keyframeTime = frame.time;
+      chip.dataset.keyframeIdentity = `${dancer.id}:${frame.time.toFixed(3)}`;
+
+      const jump = document.createElement("button");
+      jump.type = "button";
+      jump.className = "keyframe-jump";
+      jump.dataset.dancerId = dancer.id;
+      jump.dataset.keyframeIdentity = chip.dataset.keyframeIdentity;
+      jump.textContent = formatTime(frame.time);
+      jump.setAttribute("aria-label", `Go to ${dancer.name} position at ${formatTime(frame.time)}`);
+      jump.addEventListener("click", () => {
+        pausePlayback();
+        setCurrentTime(frame.time);
+      });
 
       const remove = document.createElement("button");
       remove.type = "button";
+      remove.className = "remove-keyframe";
+      remove.dataset.dancerId = dancer.id;
+      remove.dataset.keyframeIdentity = chip.dataset.keyframeIdentity;
       remove.textContent = "×";
       remove.disabled = dancer.keyframes.length <= 1;
       remove.setAttribute("aria-label", `Delete position at ${formatTime(frame.time)}`);
       remove.addEventListener("click", () => removeKeyframe(dancer.id, frame.time));
-      chip.append(remove);
+      chip.append(jump, remove);
       elements.keyframeList.append(chip);
+    });
+    updateKeyframeActiveState(true);
+  }
+
+  function updateKeyframeActiveState(force = false) {
+    const selected = getSelectedDancer();
+    const activeFrame = selected?.keyframes.find((frame) => Math.abs(frame.time - state.currentTime) <= TIME_EPSILON);
+    const activeTime = activeFrame?.time ?? null;
+    if (!force && activeTime === state.activeKeyframeTime) return;
+    state.activeKeyframeTime = activeTime;
+    document.querySelectorAll("[data-keyframe-time]").forEach((item) => {
+      const isCurrent = activeTime !== null && Math.abs(Number(item.dataset.keyframeTime) - activeTime) <= TIME_EPSILON;
+      item.classList.toggle("is-current", isCurrent);
+      if (item.classList.contains("keyframe-chip")) {
+        const jump = item.querySelector(".keyframe-jump");
+        if (isCurrent) jump?.setAttribute("aria-current", "true");
+        else jump?.removeAttribute("aria-current");
+      }
     });
   }
 
@@ -417,6 +634,9 @@
     state.currentTime = clamp(nextTime, 0, state.duration);
     elements.timeline.value = state.currentTime;
     elements.currentTime.textContent = formatTime(state.currentTime);
+    if (document.activeElement !== elements.timeInput) {
+      elements.timeInput.value = Math.round(state.currentTime * 1000) / 1000;
+    }
     renderMarkerPositions();
     const selected = getSelectedDancer();
     if (selected && document.activeElement !== elements.xInput && document.activeElement !== elements.yInput) {
@@ -432,27 +652,63 @@
         }
       });
     }
+    updateKeyframeActiveState();
   }
 
   async function startPlayback() {
-    if (state.isPlaying) return;
+    if (state.isPlaying || state.isStartingPlayback) return;
     if (state.currentTime >= state.duration - 0.01) setCurrentTime(0);
 
     const mediaPlayers = getLoadedMediaPlayers();
-    try {
-      await Promise.all(mediaPlayers.map((player) => {
-        player.currentTime = clamp(state.currentTime, 0, player.duration || state.duration);
-        if (Number.isFinite(player.duration) && state.currentTime >= player.duration - 0.01) return Promise.resolve();
-        return player.play();
-      }));
-    } catch (error) {
-      mediaPlayers.forEach((player) => player.pause());
-      showToast("The browser could not play one of the loaded media files.");
+    if (mediaPlayers.some((player) => !Number.isFinite(player.duration) || player.duration <= 0)) {
+      showToast("Wait for the loaded media details before playing.");
       return;
     }
 
+    const requestId = state.playbackRequestId + 1;
+    state.playbackRequestId = requestId;
+    state.isStartingPlayback = true;
+    updatePlayButton();
+    try {
+      await Promise.all(mediaPlayers.map((player) => {
+        player.currentTime = clamp(state.currentTime, 0, player.duration);
+        if (state.currentTime >= player.duration - 0.01) return Promise.resolve();
+        return player.play();
+      }));
+    } catch (error) {
+      if (shouldPauseAfterPlaybackStartSettles(
+        requestId,
+        state.playbackRequestId,
+        state.isPlaying,
+        state.isStartingPlayback,
+      )) {
+        mediaPlayers.forEach((player) => player.pause());
+      }
+      if (state.playbackRequestId === requestId) {
+        state.isStartingPlayback = false;
+        updatePlayButton();
+        showToast("The browser could not play one of the loaded media files.");
+      }
+      return;
+    }
+
+    if (state.playbackRequestId !== requestId) {
+      if (shouldPauseAfterPlaybackStartSettles(
+        requestId,
+        state.playbackRequestId,
+        state.isPlaying,
+        state.isStartingPlayback,
+      )) {
+        mediaPlayers.forEach((player) => player.pause());
+      }
+      return;
+    }
+
+    state.isStartingPlayback = false;
     state.isPlaying = true;
     state.playbackStartedAt = performance.now();
+    const masterPlayer = getMasterMediaPlayer();
+    if (masterPlayer && !masterPlayer.ended) state.currentTime = masterPlayer.currentTime;
     state.playbackOrigin = state.currentTime;
     updatePlayButton();
     state.rafId = requestAnimationFrame(playbackTick);
@@ -485,32 +741,45 @@
   function pausePlayback() {
     const wasPlaying = state.isPlaying;
     const masterPlayer = getMasterMediaPlayer();
-    const mediaTime = wasPlaying && masterPlayer && Number.isFinite(masterPlayer.currentTime)
+    const mediaTime = wasPlaying && masterPlayer && !masterPlayer.ended && !masterPlayer.paused && Number.isFinite(masterPlayer.currentTime)
       ? masterPlayer.currentTime
-      : null;
+      : state.currentTime;
+    state.playbackRequestId += 1;
+    state.isStartingPlayback = false;
     if (state.rafId !== null) cancelAnimationFrame(state.rafId);
     state.rafId = null;
     state.isPlaying = false;
     getLoadedMediaPlayers().forEach((player) => {
       if (!player.paused) player.pause();
     });
-    if (mediaTime !== null) setCurrentTime(mediaTime, { syncMedia: false });
+    setCurrentTime(mediaTime, { syncMedia: false });
     updatePlayButton();
   }
 
   function togglePlayback() {
-    if (state.isPlaying) pausePlayback();
+    if (state.isPlaying || state.isStartingPlayback) pausePlayback();
     else startPlayback();
   }
 
   function updatePlayButton() {
-    elements.playIcon.textContent = state.isPlaying ? "❚❚" : "▶";
-    elements.playButton.setAttribute("aria-label", state.isPlaying ? "Pause choreography" : "Play choreography");
+    elements.playIcon.textContent = state.isStartingPlayback ? "…" : state.isPlaying ? "❚❚" : "▶";
+    const label = state.isStartingPlayback
+      ? "Cancel playback start"
+      : state.isPlaying
+        ? "Pause choreography"
+        : "Play choreography";
+    elements.playButton.setAttribute("aria-label", label);
   }
 
   function updateDuration(nextDuration, options = {}) {
     const latestFrame = getLatestKeyframeTime(state.dancers);
-    const requested = clamp(nextDuration, 1, 3600);
+    const numericDuration = Number(nextDuration);
+    if (!Number.isFinite(numericDuration)) {
+      elements.durationInput.value = Math.round(state.duration * 100) / 100;
+      showToast("Timeline length must be a number from 1 to 3600 seconds.");
+      return false;
+    }
+    const requested = clamp(numericDuration, 1, 3600);
     if (requested < latestFrame) {
       elements.durationInput.value = Math.ceil(state.duration);
       showToast(`Timeline must include the last position at ${formatTime(latestFrame)}.`);
@@ -605,7 +874,7 @@
   function serializeProject() {
     return {
       version: 1,
-      projectTitle: state.projectTitle,
+      projectTitle: normalizeProjectTitle(state.projectTitle),
       duration: state.duration,
       dancerCounter: state.dancerCounter,
       dancers: state.dancers.map((dancer) => ({
@@ -618,43 +887,27 @@
     };
   }
 
-  function applyProject(project, announce = true) {
+  function applyProject(project, options = {}) {
     if (!isValidProjectData(project, MAX_DANCERS)) throw new Error("Invalid choreography file");
     pausePlayback();
-    if (state.audioUrl) removeAudio(false);
-    if (state.videoUrl) removeVideo(false);
-    state.projectTitle = String(project.projectTitle || "Untitled choreography").slice(0, 120);
-    state.duration = clamp(project.duration, 1, 3600);
-    const highestDancerNumber = project.dancers.reduce((highest, dancer) => Math.max(highest, Number(dancer.number) || 0), 0);
-    state.dancerCounter = Math.max(Number(project.dancerCounter) || 0, project.dancers.length, highestDancerNumber);
-    state.dancers = project.dancers.map((dancer, index) => ({
-      id: String(dancer.id || `imported-${Date.now()}-${index}`),
-      number: Number(dancer.number) || index + 1,
-      name: String(dancer.name || `Dancer ${index + 1}`).slice(0, 80),
-      color: /^#[0-9a-f]{6}$/i.test(dancer.color) ? dancer.color : PALETTE[index % PALETTE.length],
-      keyframes: normalizeKeyframes(dancer.keyframes),
-    }));
-    const latest = getLatestKeyframeTime(state.dancers);
-    state.duration = Math.max(state.duration, latest || 1);
-    state.selectedDancerId = state.dancers[0]?.id || null;
-    state.currentTime = 0;
-    state.markerElements.forEach((marker) => marker.remove());
-    state.markerElements.clear();
-    elements.projectTitle.value = state.projectTitle;
-    elements.timeline.max = state.duration;
-    elements.durationInput.value = Math.round(state.duration * 100) / 100;
-    elements.totalTime.textContent = formatTime(state.duration);
+    replaceDocumentData(project, {
+      currentTime: options.currentTime ?? 0,
+      selectedDancerId: options.selectedDancerId,
+    });
+    if (options.clearHistory) state.history = createHistory(HISTORY_LIMIT);
     renderAll();
-    queueSave();
-    if (announce) showToast("Choreography plan imported.");
+    setCurrentTime(state.currentTime);
+    updateHistoryControls();
+    if (options.save !== false) queueSave();
   }
 
   function exportProject() {
-    const payload = JSON.stringify(serializeProject(), null, 2);
+    const project = serializeProject();
+    const payload = JSON.stringify(project, null, 2);
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const safeName = state.projectTitle.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "choreography";
+    const safeName = project.projectTitle.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "choreography";
     link.href = url;
     link.download = `${safeName}.formation.json`;
     document.body.append(link);
@@ -667,8 +920,26 @@
   async function importProject(file) {
     if (!file) return;
     try {
+      if (Number(file.size) > MAX_IMPORT_BYTES) {
+        showToast("That plan is too large to import safely.");
+        return;
+      }
       const project = JSON.parse(await file.text());
-      applyProject(project);
+      if (!isValidProjectData(project, MAX_DANCERS)) throw new Error("Invalid choreography file");
+      const title = normalizeProjectTitle(project.projectTitle);
+      const shouldImport = window.confirm(
+        `Replace this choreography with “${title}” (${project.dancers.length} dancers)? You can undo this import. Loaded media will stay in place.`,
+      );
+      if (!shouldImport) return;
+
+      pausePlayback();
+      const changed = commitDocumentEdit("import plan", () => {
+        replaceDocumentData(project, { currentTime: 0 });
+      });
+      if (changed) {
+        setCurrentTime(0);
+        showToast("Plan imported. Loaded audio and video were kept; undo is available.");
+      }
     } catch (error) {
       showToast("That file is not a valid Formation Studio plan.");
     } finally {
@@ -676,29 +947,58 @@
     }
   }
 
-  function queueSave() {
-    elements.saveStatus.textContent = "Saving…";
+  function setSaveStatus(message, isError = false) {
+    elements.saveStatus.textContent = message;
+    elements.saveStatus.classList.toggle("is-error", isError);
+  }
+
+  function flushSave() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeProject()));
-        elements.saveStatus.textContent = "Saved locally";
-      } catch (error) {
-        elements.saveStatus.textContent = "Local save unavailable";
-      }
-    }, 180);
+    saveTimer = null;
+    if (state.storageWriteBlocked) {
+      setSaveStatus("Autosave paused: stored plan is unreadable", true);
+      return false;
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeProject()));
+      setSaveStatus("Saved locally");
+      return true;
+    } catch (error) {
+      setSaveStatus("Local save unavailable", true);
+      return false;
+    }
+  }
+
+  function queueSave() {
+    if (state.storageWriteBlocked) {
+      setSaveStatus("Autosave paused: stored plan is unreadable", true);
+      return;
+    }
+    setSaveStatus("Saving…");
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushSave, 180);
   }
 
   function restoreLocalProject() {
+    let raw;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return false;
-      const project = JSON.parse(raw);
-      if (!isValidProjectData(project, MAX_DANCERS)) return false;
-      applyProject(project, false);
-      return true;
+      raw = localStorage.getItem(STORAGE_KEY);
     } catch (error) {
-      return false;
+      setSaveStatus("Local save unavailable", true);
+      return "unavailable";
+    }
+    if (!raw) return "missing";
+
+    try {
+      const project = JSON.parse(raw);
+      if (!isValidProjectData(project, MAX_DANCERS)) throw new Error("Invalid stored project");
+      applyProject(project, { clearHistory: true, save: false });
+      return "restored";
+    } catch (error) {
+      state.storageWriteBlocked = true;
+      elements.replaceLocalSaveButton.classList.remove("is-hidden");
+      setSaveStatus("Autosave paused: stored plan is unreadable", true);
+      return "corrupt";
     }
   }
 
@@ -715,20 +1015,85 @@
   }
 
   function renderAll() {
+    if (document.activeElement !== elements.projectTitle) elements.projectTitle.value = state.projectTitle;
+    elements.timeline.max = state.duration;
+    elements.timeInput.max = state.duration;
+    if (document.activeElement !== elements.durationInput) {
+      elements.durationInput.value = Math.round(state.duration * 100) / 100;
+    }
+    elements.durationInput.disabled = state.audioUrl !== null || state.videoUrl !== null;
     renderDancerList();
     renderSelection();
     setCurrentTime(state.currentTime, { syncMedia: false });
     elements.totalTime.textContent = formatTime(state.duration);
+    updateHistoryControls();
+  }
+
+  function seekToExactTime(value) {
+    const nextTime = Number(value);
+    if (!Number.isFinite(nextTime) || nextTime < 0 || nextTime > state.duration) {
+      elements.timeInput.value = Math.round(state.currentTime * 1000) / 1000;
+      showToast(`Enter a time from 0 to ${Math.round(state.duration * 100) / 100} seconds.`);
+      return;
+    }
+    pausePlayback();
+    setCurrentTime(nextTime);
+  }
+
+  function beginProjectTitleEdit() {
+    if (!projectTitleEditSnapshot) projectTitleEditSnapshot = captureDocumentSnapshot();
+  }
+
+  function updateProjectTitleFromInput() {
+    state.projectTitle = elements.projectTitle.value.slice(0, 120);
+  }
+
+  function finishProjectTitleEdit() {
+    if (!projectTitleEditSnapshot) return;
+    const beforeSnapshot = projectTitleEditSnapshot;
+    projectTitleEditSnapshot = null;
+    state.projectTitle = normalizeProjectTitle(elements.projectTitle.value);
+    elements.projectTitle.value = state.projectTitle;
+    commitDocumentEdit("edit project title", () => {}, { beforeSnapshot, render: false });
+  }
+
+  function syncPendingTitleForExit() {
+    state.projectTitle = normalizeProjectTitle(elements.projectTitle.value);
+    elements.projectTitle.value = state.projectTitle;
+  }
+
+  function isNativeEditingTarget(target) {
+    return target instanceof Element && (
+      target.matches("input, textarea, select") ||
+      target.isContentEditable
+    );
+  }
+
+  function handleHistoryShortcut(event) {
+    if (isNativeEditingTarget(event.target) || event.altKey || (!event.ctrlKey && !event.metaKey)) return;
+    const key = event.key.toLowerCase();
+    const wantsUndo = key === "z" && !event.shiftKey;
+    const wantsRedo = (key === "z" && event.shiftKey) || key === "y";
+    if (wantsUndo && state.history.past.length > 0) {
+      event.preventDefault();
+      undoDocumentEdit({ restoreFocus: true });
+    } else if (wantsRedo && state.history.future.length > 0) {
+      event.preventDefault();
+      redoDocumentEdit({ restoreFocus: true });
+    }
   }
 
   function bindEvents() {
     elements.addDancerButton.addEventListener("click", addDancer);
+    elements.undoButton.addEventListener("click", undoDocumentEdit);
+    elements.redoButton.addEventListener("click", redoDocumentEdit);
     elements.playButton.addEventListener("click", togglePlayback);
     elements.restartButton.addEventListener("click", () => {
       pausePlayback();
       setCurrentTime(0);
     });
     elements.timeline.addEventListener("input", (event) => {
+      if (state.isStartingPlayback) pausePlayback();
       const wasPlaying = state.isPlaying;
       setCurrentTime(Number(event.target.value));
       if (wasPlaying) {
@@ -736,7 +1101,20 @@
         state.playbackStartedAt = performance.now();
       }
     });
-    elements.durationInput.addEventListener("change", (event) => updateDuration(Number(event.target.value)));
+    elements.timeInput.addEventListener("change", (event) => seekToExactTime(event.target.value));
+    elements.timeInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        seekToExactTime(event.currentTarget.value);
+        event.currentTarget.select();
+      }
+    });
+    elements.durationInput.addEventListener("change", (event) => {
+      const changed = commitDocumentEdit("change timeline length", () => {
+        return updateDuration(Number(event.target.value), { save: false });
+      });
+      if (!changed) elements.durationInput.value = Math.round(state.duration * 100) / 100;
+    });
     elements.audioInput.addEventListener("change", (event) => handleAudioFile(event.target.files[0]));
     elements.audioFileButton.addEventListener("click", () => elements.audioInput.click());
     elements.removeAudioButton.addEventListener("click", () => removeAudio());
@@ -789,9 +1167,27 @@
     elements.exportButton.addEventListener("click", exportProject);
     elements.importButton.addEventListener("click", () => elements.importInput.click());
     elements.importInput.addEventListener("change", (event) => importProject(event.target.files[0]));
-    elements.projectTitle.addEventListener("input", (event) => {
-      state.projectTitle = event.target.value.slice(0, 120);
-      queueSave();
+    elements.replaceLocalSaveButton.addEventListener("click", () => {
+      const shouldReplace = window.confirm("Replace the unreadable stored plan with the choreography currently on screen?");
+      if (!shouldReplace) return;
+      state.storageWriteBlocked = false;
+      elements.replaceLocalSaveButton.classList.add("is-hidden");
+      if (flushSave()) showToast("The local save was replaced with this choreography.");
+    });
+    elements.projectTitle.addEventListener("focus", beginProjectTitleEdit);
+    elements.projectTitle.addEventListener("input", updateProjectTitleFromInput);
+    elements.projectTitle.addEventListener("change", finishProjectTitleEdit);
+    elements.projectTitle.addEventListener("blur", finishProjectTitleEdit);
+    elements.dancerNameInput.addEventListener("change", renameSelectedDancer);
+    elements.dancerNameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        event.currentTarget.blur();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        event.currentTarget.value = getSelectedDancer()?.name || "";
+        event.currentTarget.blur();
+      }
     });
     elements.recordCoordinatesButton.addEventListener("click", () => {
       const dancer = getSelectedDancer();
@@ -805,7 +1201,14 @@
       recordPosition(dancer.id, { x, y });
       state.markerElements.get(dancer.id)?.focus();
     });
+    window.addEventListener("keydown", handleHistoryShortcut);
+    window.addEventListener("pagehide", () => {
+      syncPendingTitleForExit();
+      flushSave();
+    });
     window.addEventListener("beforeunload", () => {
+      syncPendingTitleForExit();
+      flushSave();
       pausePlayback();
       if (state.audioUrl) URL.revokeObjectURL(state.audioUrl);
       if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
@@ -816,11 +1219,13 @@
     elements.audioPlayer.volume = Number(elements.volumeInput.value);
     elements.videoPlayer.volume = Number(elements.videoVolumeInput.value);
     bindEvents();
-    if (!restoreLocalProject()) {
+    const restoreResult = restoreLocalProject();
+    if (restoreResult !== "restored") {
       updateDuration(state.duration, { save: false });
       renderAll();
-      queueSave();
+      if (restoreResult === "missing") queueSave();
     }
+    updateHistoryControls();
   }
 
   initialize();

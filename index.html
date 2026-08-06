@@ -19,6 +19,7 @@
             id="project-title"
             class="project-title"
             value="Untitled choreography"
+            maxlength="120"
             aria-label="Project title"
           />
         </div>
@@ -26,7 +27,10 @@
           <button id="export-button" class="button button-quiet" type="button">Export plan</button>
           <button id="import-button" class="button button-quiet" type="button">Import plan</button>
           <input id="import-input" class="visually-hidden" type="file" accept="application/json,.json" />
-          <span id="save-status" class="save-status" aria-live="polite">Saved locally</span>
+          <button id="replace-local-save-button" class="button button-quiet is-hidden" type="button">
+            Replace local save
+          </button>
+          <span id="save-status" class="save-status" role="status" aria-live="polite" aria-atomic="true">Saved locally</span>
         </div>
       </header>
 
@@ -36,7 +40,7 @@
             <div class="stage-card-header">
               <div>
                 <p class="section-label">Stage</p>
-                <p class="stage-help">Select a time, then drag a dancer to record a position.</p>
+                <p id="stage-instructions" class="stage-help">Select a time, then drag a dancer to record a position.</p>
               </div>
               <div class="stage-legend" aria-hidden="true">
                 <span></span>
@@ -44,7 +48,13 @@
               </div>
             </div>
 
-            <div id="stage" class="stage" aria-label="White choreography stage">
+            <div
+              id="stage"
+              class="stage"
+              role="region"
+              aria-label="Choreography stage"
+              aria-describedby="stage-instructions"
+            >
               <div class="stage-grid" aria-hidden="true"></div>
               <div class="stage-centre-line" aria-hidden="true"></div>
               <div class="stage-front" aria-hidden="true">FRONT OF STAGE</div>
@@ -62,11 +72,20 @@
                 <span id="play-icon" aria-hidden="true">▶</span>
               </button>
               <button id="restart-button" class="icon-button" type="button" aria-label="Return to start">↺</button>
+              <button id="undo-button" class="icon-button" type="button" aria-label="Undo" disabled>↶</button>
+              <button id="redo-button" class="icon-button" type="button" aria-label="Redo" disabled>↷</button>
               <div class="time-readout" aria-live="off">
                 <span id="current-time">00:00.00</span>
                 <span class="time-divider">/</span>
                 <span id="total-time">01:00.00</span>
               </div>
+              <label class="time-entry-control" for="time-input">
+                Go to
+                <span class="time-input-wrap">
+                  <input id="time-input" type="number" min="0" max="60" step="0.01" value="0" inputmode="decimal" />
+                  <span>sec</span>
+                </span>
+              </label>
               <label class="duration-control" for="duration-input">
                 Length
                 <span class="duration-input-wrap">
@@ -95,6 +114,10 @@
                 <p class="section-label">Selected dancer</p>
                 <p id="selection-text">No dancer selected</p>
               </div>
+              <label id="dancer-name-editor" class="dancer-name-editor is-hidden" for="dancer-name-input">
+                Name
+                <input id="dancer-name-input" type="text" maxlength="80" autocomplete="off" />
+              </label>
               <div id="coordinate-editor" class="coordinate-editor is-hidden" aria-label="Selected dancer coordinates">
                 <label for="x-input">X <input id="x-input" type="number" min="0" max="100" step="0.1" /></label>
                 <label for="y-input">Y <input id="y-input" type="number" min="0" max="100" step="0.1" /></label>
@@ -199,7 +222,7 @@
               <li>Drag the dancer. Dropping it records that position.</li>
               <li>Add another position later, then press play.</li>
             </ol>
-            <p class="keyboard-tip">Tip: selected dancers also move with the arrow keys. Hold Shift for larger steps.</p>
+            <p class="keyboard-tip">Tip: selected dancers move with the arrow keys. Hold Shift for larger steps. Use Ctrl/Cmd+Z to undo.</p>
           </section>
         </aside>
       </main>
