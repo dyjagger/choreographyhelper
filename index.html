@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Plan dance formations with draggable dancers, timed movement, and local audio and video playback."
+    />
+    <title>Formation Studio</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Dance choreography planner</p>
+          <input
+            id="project-title"
+            class="project-title"
+            value="Untitled choreography"
+            aria-label="Project title"
+          />
+        </div>
+        <div class="project-actions">
+          <button id="export-button" class="button button-quiet" type="button">Export plan</button>
+          <button id="import-button" class="button button-quiet" type="button">Import plan</button>
+          <input id="import-input" class="visually-hidden" type="file" accept="application/json,.json" />
+          <span id="save-status" class="save-status" aria-live="polite">Saved locally</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="editor-column" aria-label="Choreography editor">
+          <div class="stage-card">
+            <div class="stage-card-header">
+              <div>
+                <p class="section-label">Stage</p>
+                <p class="stage-help">Select a time, then drag a dancer to record a position.</p>
+              </div>
+              <div class="stage-legend" aria-hidden="true">
+                <span></span>
+                Audience
+              </div>
+            </div>
+
+            <div id="stage" class="stage" aria-label="White choreography stage">
+              <div class="stage-grid" aria-hidden="true"></div>
+              <div class="stage-centre-line" aria-hidden="true"></div>
+              <div class="stage-front" aria-hidden="true">FRONT OF STAGE</div>
+              <div id="empty-stage" class="empty-stage">
+                <strong>Your stage is empty</strong>
+                <span>Add a dancer to begin plotting formations.</span>
+              </div>
+              <div id="marker-layer" class="marker-layer"></div>
+            </div>
+          </div>
+
+          <section class="transport-card" aria-label="Timeline controls">
+            <div class="transport-main">
+              <button id="play-button" class="play-button" type="button" aria-label="Play choreography">
+                <span id="play-icon" aria-hidden="true">▶</span>
+              </button>
+              <button id="restart-button" class="icon-button" type="button" aria-label="Return to start">↺</button>
+              <div class="time-readout" aria-live="off">
+                <span id="current-time">00:00.00</span>
+                <span class="time-divider">/</span>
+                <span id="total-time">01:00.00</span>
+              </div>
+              <label class="duration-control" for="duration-input">
+                Length
+                <span class="duration-input-wrap">
+                  <input id="duration-input" type="number" min="1" max="3600" step="1" value="60" />
+                  <span>sec</span>
+                </span>
+              </label>
+            </div>
+
+            <div class="timeline-wrap">
+              <div id="keyframe-track" class="keyframe-track" aria-hidden="true"></div>
+              <input
+                id="timeline"
+                class="timeline"
+                type="range"
+                min="0"
+                max="60"
+                step="0.01"
+                value="0"
+                aria-label="Choreography time"
+              />
+            </div>
+
+            <div class="selected-summary">
+              <div>
+                <p class="section-label">Selected dancer</p>
+                <p id="selection-text">No dancer selected</p>
+              </div>
+              <div id="coordinate-editor" class="coordinate-editor is-hidden" aria-label="Selected dancer coordinates">
+                <label for="x-input">X <input id="x-input" type="number" min="0" max="100" step="0.1" /></label>
+                <label for="y-input">Y <input id="y-input" type="number" min="0" max="100" step="0.1" /></label>
+                <button id="record-coordinates-button" class="button button-quiet" type="button">Record here</button>
+              </div>
+              <div id="keyframe-list" class="keyframe-list" aria-label="Selected dancer keyframes"></div>
+            </div>
+          </section>
+        </section>
+
+        <aside class="side-panel">
+          <section class="panel-section video-section">
+            <div class="panel-heading">
+              <div>
+                <p class="section-label">Video</p>
+                <h2>Reference video</h2>
+              </div>
+              <span class="local-badge">Local only</span>
+            </div>
+            <p class="panel-copy">Load a video to play against the same choreography timeline.</p>
+            <button id="video-file-button" class="audio-drop" type="button">
+              <span class="audio-symbol video-symbol" aria-hidden="true">▶</span>
+              <span>
+                <strong>Choose a video file</strong>
+                <small>MP4, WebM or MOV</small>
+              </span>
+            </button>
+            <input
+              id="video-input"
+              class="visually-hidden"
+              type="file"
+              accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
+            />
+            <div id="video-player-wrap" class="video-player-wrap is-hidden">
+              <video id="video-player" preload="metadata" playsinline aria-label="Loaded choreography reference video"></video>
+              <span class="video-play-hint">Uses the main playhead</span>
+            </div>
+            <div id="video-details" class="audio-details is-hidden">
+              <div class="audio-file-copy">
+                <strong id="video-name"></strong>
+                <span id="video-duration"></span>
+              </div>
+              <button id="remove-video-button" class="icon-button danger-icon" type="button" aria-label="Remove video">×</button>
+            </div>
+            <label class="volume-control" for="video-volume-input">
+              <span>Video volume</span>
+              <input id="video-volume-input" type="range" min="0" max="1" step="0.01" value="0.8" />
+            </label>
+          </section>
+
+          <section class="panel-section music-section">
+            <div class="panel-heading">
+              <div>
+                <p class="section-label">Music</p>
+                <h2>Audio track</h2>
+              </div>
+              <span class="local-badge">Local only</span>
+            </div>
+            <p class="panel-copy">Load an MP3 or WAV. The file stays on this device. The longest loaded media file sets the timeline length.</p>
+            <button id="audio-file-button" class="audio-drop" type="button">
+              <span class="audio-symbol" aria-hidden="true">♪</span>
+              <span>
+                <strong>Choose an audio file</strong>
+                <small>MP3 or WAV</small>
+              </span>
+            </button>
+            <input id="audio-input" class="visually-hidden" type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" />
+            <div id="audio-details" class="audio-details is-hidden">
+              <div class="audio-file-copy">
+                <strong id="audio-name"></strong>
+                <span id="audio-duration"></span>
+              </div>
+              <button id="remove-audio-button" class="icon-button danger-icon" type="button" aria-label="Remove audio">×</button>
+            </div>
+            <label class="volume-control" for="volume-input">
+              <span>Music volume</span>
+              <input id="volume-input" type="range" min="0" max="1" step="0.01" value="0.9" />
+            </label>
+            <audio id="audio-player" preload="metadata"></audio>
+          </section>
+
+          <section class="panel-section dancers-section">
+            <div class="panel-heading">
+              <div>
+                <p class="section-label">Cast</p>
+                <h2>Dancers</h2>
+              </div>
+              <span id="dancer-count" class="count-badge">0 / 50</span>
+            </div>
+            <button id="add-dancer-button" class="button button-primary full-width" type="button">
+              <span aria-hidden="true">＋</span>
+              Add dancer
+            </button>
+            <div id="dancer-list" class="dancer-list"></div>
+          </section>
+
+          <section class="panel-section tips-section">
+            <p class="section-label">How it works</p>
+            <ol>
+              <li>Add and select a dancer.</li>
+              <li>Move the timeline to the desired time.</li>
+              <li>Drag the dancer. Dropping it records that position.</li>
+              <li>Add another position later, then press play.</li>
+            </ol>
+            <p class="keyboard-tip">Tip: selected dancers also move with the arrow keys. Hold Shift for larger steps.</p>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="core.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
