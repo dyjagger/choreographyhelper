@@ -28,6 +28,7 @@
   const HISTORY_LIMIT = 50;
   const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
   const STORAGE_KEY = "formation-studio-project-v1";
+  const THEME_STORAGE_KEY = "formation-studio-theme";
   const PALETTE = [
     "#7156d9",
     "#e0527d",
@@ -75,6 +76,9 @@
     selectionText: document.querySelector("#selection-text"),
     stage: document.querySelector("#stage"),
     timeline: document.querySelector("#timeline"),
+    themeToggle: document.querySelector("#theme-toggle"),
+    themeToggleIcon: document.querySelector("#theme-toggle-icon"),
+    themeToggleText: document.querySelector("#theme-toggle-text"),
     timeInput: document.querySelector("#time-input"),
     toast: document.querySelector("#toast"),
     totalTime: document.querySelector("#total-time"),
@@ -117,6 +121,28 @@
   let saveTimer = null;
   let toastTimer = null;
   let projectTitleEditSnapshot = null;
+
+  function applyTheme(theme, persist = false) {
+    const nextTheme = theme === "dark" ? "dark" : "light";
+    const isDark = nextTheme === "dark";
+    document.documentElement.dataset.theme = nextTheme;
+    elements.themeToggle.setAttribute("aria-pressed", String(isDark));
+    elements.themeToggle.setAttribute("aria-label", `Switch to ${isDark ? "light" : "dark"} mode`);
+    elements.themeToggle.title = `Switch to ${isDark ? "light" : "dark"} mode`;
+    elements.themeToggleIcon.textContent = isDark ? "☀" : "☾";
+    elements.themeToggleText.textContent = isDark ? "Light mode" : "Dark mode";
+    if (!persist) return;
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    } catch (error) {
+      showToast("Theme changed for this visit. Browser storage is unavailable.");
+    }
+  }
+
+  function toggleTheme() {
+    const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    applyTheme(nextTheme, true);
+  }
 
   function getSelectedDancer() {
     return state.dancers.find((dancer) => dancer.id === state.selectedDancerId) || null;
@@ -1085,6 +1111,7 @@
 
   function bindEvents() {
     elements.addDancerButton.addEventListener("click", addDancer);
+    elements.themeToggle.addEventListener("click", toggleTheme);
     elements.undoButton.addEventListener("click", undoDocumentEdit);
     elements.redoButton.addEventListener("click", redoDocumentEdit);
     elements.playButton.addEventListener("click", togglePlayback);
@@ -1216,6 +1243,7 @@
   }
 
   function initialize() {
+    applyTheme(document.documentElement.dataset.theme);
     elements.audioPlayer.volume = Number(elements.volumeInput.value);
     elements.videoPlayer.volume = Number(elements.videoVolumeInput.value);
     bindEvents();
