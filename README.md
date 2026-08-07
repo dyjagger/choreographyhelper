@@ -31,7 +31,7 @@ Use **New project** to permanently clear the choreography, loaded audio, and loa
 
 Up to 50 dancers are supported. Edit dancer names directly in the cast list. Unnamed dancers use their number on the stage; named dancers use the first two characters of their name, such as `Ma` for Maya. The front of the stage can be shown at the top or bottom without rewriting saved keyframes.
 
-Use the `−`, `100%`, and `+` controls, the mouse wheel, or a two-finger pinch to zoom the stage. Pinch movement also pans the zoomed view.
+Use the `−`, `100%`, and `+` controls, the mouse wheel, or a two-finger pinch to zoom the stage from 100% to 300%. Pinch movement also pans the zoomed view.
 
 Use modifier-click or a desktop selection rectangle to select several dancers. On touch screens, tap dancers to add or remove them from the selection. **Select all** and **Clear** provide quick selection controls. Dragging any selected dancer or pressing an arrow key moves the selected formation as one rigid group and records one undoable edit at the current playhead time.
 

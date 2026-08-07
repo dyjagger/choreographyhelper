@@ -40,7 +40,7 @@
   const HISTORY_LIMIT = 50;
   const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
   const MAX_COMPLETE_PACKAGE_BYTES = 1024 * 1024 * 1024;
-  const MIN_STAGE_ZOOM = 0.5;
+  const MIN_STAGE_ZOOM = 1;
   const MAX_STAGE_ZOOM = 3;
   const STAGE_ZOOM_STEP = 0.25;
   const STORAGE_KEY = "formation-studio-project-v1";

@@ -454,6 +454,13 @@ input:focus-visible,
   opacity: 0.42;
 }
 
+.formation-path-hint {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 680;
+  white-space: nowrap;
+}
+
 .stage-selection-count {
   margin-left: auto;
   color: var(--muted);
