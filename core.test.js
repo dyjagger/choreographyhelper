@@ -332,3 +332,14 @@ test("legacy version-one data may omit optional presentation fields", () => {
     dancers: [{ id: "legacy", keyframes: [{ time: 0, x: 50, y: 50 }] }],
   }), true);
 });
+
+test("version-two projects accept only supported stage orientations", () => {
+  const base = {
+    version: 2,
+    duration: 60,
+    dancers: [{ id: "oriented", keyframes: [{ time: 0, x: 50, y: 50 }] }],
+  };
+  assert.equal(isValidProjectData({ ...base, stageOrientation: "front-bottom" }), true);
+  assert.equal(isValidProjectData({ ...base, stageOrientation: "front-top" }), true);
+  assert.equal(isValidProjectData({ ...base, stageOrientation: "sideways" }), false);
+});

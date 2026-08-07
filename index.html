@@ -61,9 +61,16 @@
                 <p class="section-label">Stage</p>
                 <p id="stage-instructions" class="stage-help">Select a time, then drag a dancer to record a position.</p>
               </div>
-              <div class="stage-legend" aria-hidden="true">
-                <span></span>
-                Audience
+              <div class="stage-header-tools">
+                <div class="stage-orientation-control" role="group" aria-label="Front of stage position">
+                  <span>Front</span>
+                  <button id="front-top-button" class="stage-option-button" type="button" aria-pressed="false">Top</button>
+                  <button id="front-bottom-button" class="stage-option-button" type="button" aria-pressed="true">Bottom</button>
+                </div>
+                <div class="stage-legend" aria-hidden="true">
+                  <span></span>
+                  <span id="audience-position-label">Audience below</span>
+                </div>
               </div>
             </div>
 
@@ -228,10 +235,16 @@
               </div>
               <span id="dancer-count" class="count-badge">0 / 50</span>
             </div>
-            <button id="add-dancer-button" class="button button-primary full-width" type="button">
-              <span aria-hidden="true">＋</span>
-              Add dancer
-            </button>
+            <form id="add-dancer-form" class="add-dancer-form">
+              <label for="new-dancer-name">Dancer name <span>Optional</span></label>
+              <div class="add-dancer-controls">
+                <input id="new-dancer-name" type="text" maxlength="80" autocomplete="off" placeholder="e.g. Maya" />
+                <button id="add-dancer-button" class="button button-primary" type="submit">
+                  <span aria-hidden="true">＋</span>
+                  Add
+                </button>
+              </div>
+            </form>
             <div id="dancer-list" class="dancer-list"></div>
           </section>
 

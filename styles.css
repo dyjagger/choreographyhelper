@@ -327,7 +327,47 @@ input:focus-visible,
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  gap: 14px;
   margin-bottom: 15px;
+}
+
+.stage-header-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.stage-orientation-control {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--field-bg);
+}
+
+.stage-orientation-control > span {
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 760;
+}
+
+.stage-option-button {
+  min-height: 32px;
+  padding: 0 9px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  color: var(--quiet-ink);
+  background: transparent;
+  font-size: 0.7rem;
+  font-weight: 760;
+}
+
+.stage-option-button[aria-pressed="true"] {
+  color: white;
+  background: var(--purple);
 }
 
 .stage-help,
@@ -350,7 +390,7 @@ input:focus-visible,
   text-transform: uppercase;
 }
 
-.stage-legend span {
+.stage-legend > span:first-child {
   width: 28px;
   height: 3px;
   border-radius: 9px;
@@ -404,6 +444,11 @@ input:focus-visible,
   letter-spacing: 0.14em;
   transform: translateX(-50%);
   pointer-events: none;
+}
+
+.stage[data-orientation="front-top"] .stage-front {
+  top: 10px;
+  bottom: auto;
 }
 
 .empty-stage {
@@ -899,6 +944,40 @@ input:focus-visible,
   overflow: auto;
 }
 
+.add-dancer-form {
+  display: grid;
+  gap: 7px;
+}
+
+.add-dancer-form > label {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
+.add-dancer-form > label span {
+  font-size: 0.64rem;
+  font-weight: 650;
+}
+
+.add-dancer-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.add-dancer-controls input {
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  background: var(--field-bg);
+}
+
 .dancer-empty {
   padding: 18px 7px 4px;
   color: var(--muted);
@@ -962,6 +1041,7 @@ input:focus-visible,
   font-size: 0.66rem;
 }
 
+.edit-dancer,
 .remove-dancer {
   display: grid;
   place-items: center;
@@ -973,6 +1053,15 @@ input:focus-visible,
   color: var(--remove-ink);
   background: transparent;
   font-size: 1.05rem;
+}
+
+.edit-dancer {
+  font-size: 0.92rem;
+}
+
+.edit-dancer:hover {
+  color: var(--purple);
+  background: var(--purple-soft);
 }
 
 .remove-dancer:hover {
@@ -1315,6 +1404,7 @@ input:focus-visible,
   }
 
   .dancer-row-main,
+  .edit-dancer,
   .remove-dancer,
   .keyframe-jump,
   .keyframe-chip .remove-keyframe,

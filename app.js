@@ -22,6 +22,9 @@
     shouldPauseAfterPlaybackStartSettles,
     undoHistory,
     upsertKeyframe,
+    displayToStagePosition,
+    normalizeStageOrientation,
+    stageToDisplayPosition,
   } = window.ChoreoCore;
 
   const MAX_DANCERS = 50;
@@ -44,6 +47,7 @@
 
   const elements = {
     addDancerButton: document.querySelector("#add-dancer-button"),
+    addDancerForm: document.querySelector("#add-dancer-form"),
     audioFileButton: document.querySelector("#audio-file-button"),
     audioDetails: document.querySelector("#audio-details"),
     audioDuration: document.querySelector("#audio-duration"),
@@ -59,11 +63,14 @@
     durationInput: document.querySelector("#duration-input"),
     emptyStage: document.querySelector("#empty-stage"),
     exportButton: document.querySelector("#export-button"),
+    frontBottomButton: document.querySelector("#front-bottom-button"),
+    frontTopButton: document.querySelector("#front-top-button"),
     importInput: document.querySelector("#import-input"),
     importButton: document.querySelector("#import-button"),
     keyframeList: document.querySelector("#keyframe-list"),
     keyframeTrack: document.querySelector("#keyframe-track"),
     markerLayer: document.querySelector("#marker-layer"),
+    newDancerNameInput: document.querySelector("#new-dancer-name"),
     newProjectButton: document.querySelector("#new-project-button"),
     playButton: document.querySelector("#play-button"),
     playIcon: document.querySelector("#play-icon"),
@@ -76,6 +83,7 @@
     saveStatus: document.querySelector("#save-status"),
     selectionText: document.querySelector("#selection-text"),
     stage: document.querySelector("#stage"),
+    audiencePositionLabel: document.querySelector("#audience-position-label"),
     timeline: document.querySelector("#timeline"),
     themeToggle: document.querySelector("#theme-toggle"),
     themeToggleIcon: document.querySelector("#theme-toggle-icon"),
@@ -114,6 +122,7 @@
     projectTitle: "Untitled choreography",
     rafId: null,
     selectedDancerId: null,
+    stageOrientation: "front-bottom",
     storageWriteBlocked: false,
     audioUrl: null,
     videoUrl: null,
@@ -197,6 +206,7 @@
 
   function replaceDocumentData(project, options = {}) {
     state.projectTitle = normalizeProjectTitle(project.projectTitle);
+    state.stageOrientation = normalizeStageOrientation(project.stageOrientation);
     state.duration = clamp(project.duration, 1, 3600);
     const highestDancerNumber = project.dancers.reduce((highest, dancer, index) => {
       const candidate = Number(dancer.number);
@@ -324,6 +334,7 @@
       state.duration = freshDuration;
       state.currentTime = 0;
       state.selectedDancerId = null;
+      state.stageOrientation = "front-bottom";
       state.markerElements.forEach((marker) => marker.remove());
       state.markerElements.clear();
     });
@@ -350,13 +361,14 @@
       dancer = {
         id: createUniqueLocalDancerId(state.dancers, numberAllocation.number),
         number: numberAllocation.number,
-        name: `Dancer ${numberAllocation.number}`,
+        name: normalizeDancerName(elements.newDancerNameInput.value, `Dancer ${numberAllocation.number}`),
         color: PALETTE[(numberAllocation.number - 1) % PALETTE.length],
         keyframes: [{ time: state.currentTime, x: position.x, y: position.y }],
       };
       state.dancers.push(dancer);
       state.selectedDancerId = dancer.id;
     });
+    elements.newDancerNameInput.value = "";
     state.markerElements.get(dancer.id)?.focus();
     showToast(`${dancer.name} added at ${formatTime(state.currentTime)}.`);
   }
@@ -427,11 +439,12 @@
       const marker = ensureMarkerElement(dancer);
       const position = getPositionAtTime(dancer.keyframes, state.currentTime);
       if (!position) return;
-      marker.style.left = `${position.x}%`;
-      marker.style.top = `${position.y}%`;
+      const displayedPosition = stageToDisplayPosition(position, state.stageOrientation);
+      marker.style.left = `${displayedPosition.x}%`;
+      marker.style.top = `${displayedPosition.y}%`;
       marker.classList.toggle("is-selected", dancer.id === state.selectedDancerId);
       marker.setAttribute("aria-pressed", String(dancer.id === state.selectedDancerId));
-      marker.setAttribute("aria-label", `${dancer.name} at ${Math.round(position.x)} percent across and ${Math.round(position.y)} percent down.`);
+      marker.setAttribute("aria-label", `${dancer.name} at ${Math.round(displayedPosition.x)} percent across and ${Math.round(displayedPosition.y)} percent down.`);
     });
 
     elements.emptyStage.classList.toggle("is-hidden", state.dancers.length > 0);
@@ -439,10 +452,19 @@
 
   function positionFromPointer(event) {
     const rect = elements.stage.getBoundingClientRect();
-    return {
+    return displayToStagePosition({
       x: clamp(((event.clientX - rect.left) / rect.width) * 100, 2.5, 97.5),
-      y: clamp(((event.clientY - rect.top) / rect.height) * 100, 4, 94),
-    };
+      y: clamp(((event.clientY - rect.top) / rect.height) * 100, 4, 96),
+    }, state.stageOrientation);
+  }
+
+  function setStageOrientation(orientation) {
+    const nextOrientation = normalizeStageOrientation(orientation);
+    if (nextOrientation === state.stageOrientation) return;
+    commitDocumentEdit("change stage orientation", () => {
+      state.stageOrientation = nextOrientation;
+    });
+    showToast(nextOrientation === "front-top" ? "Front of stage moved to the top." : "Front of stage moved to the bottom.");
   }
 
   function startMarkerDrag(event) {
@@ -465,8 +487,9 @@
         if (!didMove) return;
       }
       latestPosition = positionFromPointer(moveEvent);
-      marker.style.left = `${latestPosition.x}%`;
-      marker.style.top = `${latestPosition.y}%`;
+      const displayedPosition = stageToDisplayPosition(latestPosition, state.stageOrientation);
+      marker.style.left = `${displayedPosition.x}%`;
+      marker.style.top = `${displayedPosition.y}%`;
     }
 
     function finish(finishEvent) {
@@ -514,11 +537,13 @@
     selectDancer(dancerId);
     const dancer = getSelectedDancer();
     const currentPosition = getPositionAtTime(dancer.keyframes, state.currentTime);
+    const displayedCurrentPosition = stageToDisplayPosition(currentPosition, state.stageOrientation);
+    const displayedPosition = stageToDisplayPosition(currentPosition, state.stageOrientation);
     const step = event.shiftKey ? 5 : 1;
-    recordPosition(dancerId, {
-      x: clamp(currentPosition.x + direction[0] * step, 2.5, 97.5),
-      y: clamp(currentPosition.y + direction[1] * step, 4, 94),
-    });
+    recordPosition(dancerId, displayToStagePosition({
+      x: clamp(displayedPosition.x + direction[0] * step, 2.5, 97.5),
+      y: clamp(displayedPosition.y + direction[1] * step, 4, 96),
+    }, state.stageOrientation));
   }
 
   function recordPosition(dancerId, position) {
@@ -607,7 +632,18 @@
       removeButton.setAttribute("aria-label", `Remove ${dancer.name}`);
       removeButton.addEventListener("click", () => removeDancer(dancer.id));
 
-      row.append(selectButton, removeButton);
+      const editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "edit-dancer";
+      editButton.textContent = "✎";
+      editButton.setAttribute("aria-label", `Edit ${dancer.name}'s name`);
+      editButton.addEventListener("click", () => {
+        selectDancer(dancer.id);
+        elements.dancerNameInput.focus();
+        elements.dancerNameInput.select();
+      });
+
+      row.append(selectButton, editButton, removeButton);
       elements.dancerList.append(row);
     });
   }
@@ -629,9 +665,10 @@
     elements.coordinateEditor.classList.remove("is-hidden");
     elements.dancerNameEditor.classList.remove("is-hidden");
     if (document.activeElement !== elements.dancerNameInput) elements.dancerNameInput.value = dancer.name;
-    elements.xInput.value = currentPosition.x.toFixed(1);
-    elements.yInput.value = currentPosition.y.toFixed(1);
+    elements.xInput.value = displayedCurrentPosition.x.toFixed(1);
+    elements.yInput.value = displayedCurrentPosition.y.toFixed(1);
     normalizeKeyframes(dancer.keyframes).forEach((frame) => {
+      const displayedFrame = stageToDisplayPosition(frame, state.stageOrientation);
       const dot = document.createElement("span");
       dot.className = "keyframe-dot";
       dot.style.left = `${(frame.time / state.duration) * 100}%`;
@@ -640,7 +677,7 @@
 
       const chip = document.createElement("span");
       chip.className = "keyframe-chip";
-      chip.title = `x ${frame.x.toFixed(1)}, y ${frame.y.toFixed(1)}`;
+      chip.title = `x ${displayedFrame.x.toFixed(1)}, y ${displayedFrame.y.toFixed(1)}`;
       chip.dataset.keyframeTime = frame.time;
       chip.dataset.keyframeIdentity = `${dancer.id}:${frame.time.toFixed(3)}`;
 
@@ -699,8 +736,9 @@
     const selected = getSelectedDancer();
     if (selected && document.activeElement !== elements.xInput && document.activeElement !== elements.yInput) {
       const position = getPositionAtTime(selected.keyframes, state.currentTime);
-      elements.xInput.value = position.x.toFixed(1);
-      elements.yInput.value = position.y.toFixed(1);
+      const displayedPosition = stageToDisplayPosition(position, state.stageOrientation);
+      elements.xInput.value = displayedPosition.x.toFixed(1);
+      elements.yInput.value = displayedPosition.y.toFixed(1);
     }
 
     if (options.syncMedia !== false) {
@@ -931,10 +969,11 @@
 
   function serializeProject() {
     return {
-      version: 1,
+      version: 2,
       projectTitle: normalizeProjectTitle(state.projectTitle),
       duration: state.duration,
       dancerCounter: state.dancerCounter,
+      stageOrientation: state.stageOrientation,
       dancers: state.dancers.map((dancer) => ({
         id: dancer.id,
         number: dancer.number,
@@ -1074,6 +1113,11 @@
 
   function renderAll() {
     if (document.activeElement !== elements.projectTitle) elements.projectTitle.value = state.projectTitle;
+    elements.stage.dataset.orientation = state.stageOrientation;
+    const isFrontTop = state.stageOrientation === "front-top";
+    elements.frontTopButton.setAttribute("aria-pressed", String(isFrontTop));
+    elements.frontBottomButton.setAttribute("aria-pressed", String(!isFrontTop));
+    elements.audiencePositionLabel.textContent = isFrontTop ? "Audience above" : "Audience below";
     elements.timeline.max = state.duration;
     elements.timeInput.max = state.duration;
     if (document.activeElement !== elements.durationInput) {
@@ -1142,7 +1186,12 @@
   }
 
   function bindEvents() {
-    elements.addDancerButton.addEventListener("click", addDancer);
+    elements.addDancerForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      addDancer();
+    });
+    elements.frontTopButton.addEventListener("click", () => setStageOrientation("front-top"));
+    elements.frontBottomButton.addEventListener("click", () => setStageOrientation("front-bottom"));
     elements.newProjectButton.addEventListener("click", startNewProject);
     elements.themeToggle.addEventListener("click", toggleTheme);
     elements.undoButton.addEventListener("click", undoDocumentEdit);
@@ -1258,7 +1307,7 @@
         showToast("X and Y must each be between 0 and 100.");
         return;
       }
-      recordPosition(dancer.id, { x, y });
+      recordPosition(dancer.id, displayToStagePosition({ x, y }, state.stageOrientation));
       state.markerElements.get(dancer.id)?.focus();
     });
     window.addEventListener("keydown", handleHistoryShortcut);

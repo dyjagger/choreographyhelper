@@ -9,7 +9,7 @@
   const MAX_TOTAL_KEYFRAMES = 50000;
   const STAGE_ORIENTATION_FRONT_BOTTOM = "front-bottom";
   const STAGE_ORIENTATION_FRONT_TOP = "front-top";
-  const DEFAULT_STAGE_BOUNDS = Object.freeze({ minX: 2.5, maxX: 97.5, minY: 4, maxY: 94 });
+  const DEFAULT_STAGE_BOUNDS = Object.freeze({ minX: 2.5, maxX: 97.5, minY: 4, maxY: 96 });
 
   function clamp(value, minimum, maximum) {
     return Math.min(maximum, Math.max(minimum, Number(value)));
