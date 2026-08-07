@@ -33,6 +33,8 @@ Up to 50 dancers are supported. Audio and video files remain local to the browse
 
 The interface adapts automatically to narrow screens and touch input. Mobile layouts use larger touch targets, reorganized transport controls, a cast-first side panel, and stage scrolling that remains available outside draggable dancer markers.
 
+On touch phones in landscape orientation, the stage and transport occupy the left side while video, music, and dancer setup appear in a scrollable right rail.
+
 ## Test it
 
 ```bash
