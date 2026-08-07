@@ -1057,6 +1057,11 @@ input:focus-visible,
     align-items: flex-start;
     flex-direction: column;
     gap: 14px;
+    min-height: auto;
+  }
+
+  .topbar > div:first-child {
+    flex: 0 0 auto;
   }
 
   .topbar > div:first-child,
