@@ -29,11 +29,11 @@ Use the **Go to** field or a recorded-position time to move the playhead to an e
 
 Use **New project** to clear the title, dancers, recorded positions, and playhead after a confirmation. The reset is undoable and keeps locally loaded music or video in place.
 
-Up to 50 dancers are supported. Audio and video files remain local to the browser and are not included in exported choreography JSON files or edit history. Choreography data is autosaved in the browser and can also be exported or imported as JSON. Importing asks for confirmation, remains undoable, and keeps loaded local media in place. Music and video have independent volume controls. The light/dark appearance toggle follows the device preference on first use and then remembers the user's choice in that browser.
+Up to 50 dancers are supported. Audio and video files remain local to the browser and are not included in exported choreography JSON files or edit history. Choreography data is autosaved in the browser and can also be exported or imported as JSON. Importing asks for confirmation, remains undoable, and keeps loaded local media in place. Music and video have independent volume controls. The app starts in dark mode and remembers any later theme choice in that browser.
 
 The interface adapts automatically to narrow screens and touch input. Mobile layouts use larger touch targets, reorganized transport controls, a cast-first side panel, and stage scrolling that remains available outside draggable dancer markers.
 
-On touch phones in landscape orientation, the stage and transport occupy the left side while video, music, and dancer setup appear in a scrollable right rail.
+On touch phones in landscape orientation, the stage and transport occupy the left side beside a height-matched, scrollable video and music panel. Dancer setup moves into its own full-width panel beneath both columns.
 
 ## Test it
 

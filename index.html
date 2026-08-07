@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,12 +10,12 @@
     <title>Formation Studio</title>
     <script>
       (() => {
-        let theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        let theme = "dark";
         try {
           const savedTheme = localStorage.getItem("formation-studio-theme");
           if (savedTheme === "light" || savedTheme === "dark") theme = savedTheme;
         } catch (error) {
-          // The system preference still provides a safe default when storage is unavailable.
+          // Dark mode remains the safe default when storage is unavailable.
         }
         document.documentElement.dataset.theme = theme;
       })();
@@ -148,75 +148,77 @@
         </section>
 
         <aside class="side-panel">
-          <section class="panel-section video-section">
-            <div class="panel-heading">
-              <div>
-                <p class="section-label">Video</p>
-                <h2>Reference video</h2>
+          <div class="media-stack">
+            <section class="panel-section video-section">
+              <div class="panel-heading">
+                <div>
+                  <p class="section-label">Video</p>
+                  <h2>Reference video</h2>
+                </div>
+                <span class="local-badge">Local only</span>
               </div>
-              <span class="local-badge">Local only</span>
-            </div>
-            <p class="panel-copy">Load a video to play against the same choreography timeline.</p>
-            <button id="video-file-button" class="audio-drop" type="button">
-              <span class="audio-symbol video-symbol" aria-hidden="true">▶</span>
-              <span>
-                <strong>Choose a video file</strong>
-                <small>MP4, WebM or MOV</small>
-              </span>
-            </button>
-            <input
-              id="video-input"
-              class="visually-hidden"
-              type="file"
-              accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
-            />
-            <div id="video-player-wrap" class="video-player-wrap is-hidden">
-              <video id="video-player" preload="metadata" playsinline aria-label="Loaded choreography reference video"></video>
-              <span class="video-play-hint">Uses the main playhead</span>
-            </div>
-            <div id="video-details" class="audio-details is-hidden">
-              <div class="audio-file-copy">
-                <strong id="video-name"></strong>
-                <span id="video-duration"></span>
+              <p class="panel-copy">Load a video to play against the same choreography timeline.</p>
+              <button id="video-file-button" class="audio-drop" type="button">
+                <span class="audio-symbol video-symbol" aria-hidden="true">▶</span>
+                <span>
+                  <strong>Choose a video file</strong>
+                  <small>MP4, WebM or MOV</small>
+                </span>
+              </button>
+              <input
+                id="video-input"
+                class="visually-hidden"
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
+              />
+              <div id="video-player-wrap" class="video-player-wrap is-hidden">
+                <video id="video-player" preload="metadata" playsinline aria-label="Loaded choreography reference video"></video>
+                <span class="video-play-hint">Uses the main playhead</span>
               </div>
-              <button id="remove-video-button" class="icon-button danger-icon" type="button" aria-label="Remove video">×</button>
-            </div>
-            <label class="volume-control" for="video-volume-input">
-              <span>Video volume</span>
-              <input id="video-volume-input" type="range" min="0" max="1" step="0.01" value="0.8" />
-            </label>
-          </section>
+              <div id="video-details" class="audio-details is-hidden">
+                <div class="audio-file-copy">
+                  <strong id="video-name"></strong>
+                  <span id="video-duration"></span>
+                </div>
+                <button id="remove-video-button" class="icon-button danger-icon" type="button" aria-label="Remove video">×</button>
+              </div>
+              <label class="volume-control" for="video-volume-input">
+                <span>Video volume</span>
+                <input id="video-volume-input" type="range" min="0" max="1" step="0.01" value="0.8" />
+              </label>
+            </section>
 
-          <section class="panel-section music-section">
-            <div class="panel-heading">
-              <div>
-                <p class="section-label">Music</p>
-                <h2>Audio track</h2>
+            <section class="panel-section music-section">
+              <div class="panel-heading">
+                <div>
+                  <p class="section-label">Music</p>
+                  <h2>Audio track</h2>
+                </div>
+                <span class="local-badge">Local only</span>
               </div>
-              <span class="local-badge">Local only</span>
-            </div>
-            <p class="panel-copy">Load an MP3 or WAV. The file stays on this device. The longest loaded media file sets the timeline length.</p>
-            <button id="audio-file-button" class="audio-drop" type="button">
-              <span class="audio-symbol" aria-hidden="true">♪</span>
-              <span>
-                <strong>Choose an audio file</strong>
-                <small>MP3 or WAV</small>
-              </span>
-            </button>
-            <input id="audio-input" class="visually-hidden" type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" />
-            <div id="audio-details" class="audio-details is-hidden">
-              <div class="audio-file-copy">
-                <strong id="audio-name"></strong>
-                <span id="audio-duration"></span>
+              <p class="panel-copy">Load an MP3 or WAV. The file stays on this device. The longest loaded media file sets the timeline length.</p>
+              <button id="audio-file-button" class="audio-drop" type="button">
+                <span class="audio-symbol" aria-hidden="true">♪</span>
+                <span>
+                  <strong>Choose an audio file</strong>
+                  <small>MP3 or WAV</small>
+                </span>
+              </button>
+              <input id="audio-input" class="visually-hidden" type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" />
+              <div id="audio-details" class="audio-details is-hidden">
+                <div class="audio-file-copy">
+                  <strong id="audio-name"></strong>
+                  <span id="audio-duration"></span>
+                </div>
+                <button id="remove-audio-button" class="icon-button danger-icon" type="button" aria-label="Remove audio">×</button>
               </div>
-              <button id="remove-audio-button" class="icon-button danger-icon" type="button" aria-label="Remove audio">×</button>
-            </div>
-            <label class="volume-control" for="volume-input">
-              <span>Music volume</span>
-              <input id="volume-input" type="range" min="0" max="1" step="0.01" value="0.9" />
-            </label>
-            <audio id="audio-player" preload="metadata"></audio>
-          </section>
+              <label class="volume-control" for="volume-input">
+                <span>Music volume</span>
+                <input id="volume-input" type="range" min="0" max="1" step="0.01" value="0.9" />
+              </label>
+              <audio id="audio-player" preload="metadata"></audio>
+            </section>
+          </div>
 
           <section class="panel-section dancers-section">
             <div class="panel-heading">
