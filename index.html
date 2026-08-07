@@ -43,9 +43,10 @@
           <button id="new-project-button" class="button button-quiet button-new-project" type="button">
             New project
           </button>
-          <button id="export-button" class="button button-quiet" type="button">Export plan</button>
-          <button id="import-button" class="button button-quiet" type="button">Import plan</button>
-          <input id="import-input" class="visually-hidden" type="file" accept="application/json,.json" />
+          <button id="export-button" class="button button-quiet" type="button">Export JSON</button>
+          <button id="export-package-button" class="button button-quiet" type="button">Export complete</button>
+          <button id="import-button" class="button button-quiet" type="button">Import</button>
+          <input id="import-input" class="visually-hidden" type="file" accept="application/json,application/zip,.json,.formation" />
           <button id="replace-local-save-button" class="button button-quiet is-hidden" type="button">
             Replace local save
           </button>
@@ -293,6 +294,7 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="core.js"></script>
+    <script src="package.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

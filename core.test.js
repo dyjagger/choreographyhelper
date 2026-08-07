@@ -366,4 +366,6 @@ test("version-two projects accept only supported stage orientations", () => {
   assert.equal(isValidProjectData({ ...base, stageOrientation: "front-bottom" }), true);
   assert.equal(isValidProjectData({ ...base, stageOrientation: "front-top" }), true);
   assert.equal(isValidProjectData({ ...base, stageOrientation: "sideways" }), false);
+  assert.equal(isValidProjectData({ ...base, audioVolume: 0.4, videoVolume: 1 }), true);
+  assert.equal(isValidProjectData({ ...base, audioVolume: 1.1 }), false);
 });

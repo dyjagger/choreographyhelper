@@ -376,6 +376,12 @@
     ) {
       return false;
     }
+    for (const volumeKey of ["audioVolume", "videoVolume"]) {
+      if (
+        candidate[volumeKey] !== undefined &&
+        (!Number.isFinite(Number(candidate[volumeKey])) || Number(candidate[volumeKey]) < 0 || Number(candidate[volumeKey]) > 1)
+      ) return false;
+    }
     const duration = Number(candidate.duration);
     if (!Number.isFinite(duration) || duration < 1 || duration > 3600) return false;
     if (

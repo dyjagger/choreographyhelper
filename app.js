@@ -31,10 +31,12 @@
     normalizeStageOrientation,
     stageToDisplayPosition,
   } = window.ChoreoCore;
+  const { createStoredZip, readStoredZip } = window.FormationPackage;
 
   const MAX_DANCERS = 50;
   const HISTORY_LIMIT = 50;
   const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+  const MAX_COMPLETE_PACKAGE_BYTES = 1024 * 1024 * 1024;
   const MIN_STAGE_ZOOM = 0.5;
   const MAX_STAGE_ZOOM = 3;
   const STAGE_ZOOM_STEP = 0.25;
@@ -72,6 +74,7 @@
     durationInput: document.querySelector("#duration-input"),
     emptyStage: document.querySelector("#empty-stage"),
     exportButton: document.querySelector("#export-button"),
+    exportPackageButton: document.querySelector("#export-package-button"),
     frontBottomButton: document.querySelector("#front-bottom-button"),
     frontTopButton: document.querySelector("#front-top-button"),
     formationPathButton: document.querySelector("#formation-path-button"),
@@ -131,6 +134,8 @@
   const state = {
     activeKeyframeTime: null,
     activeStageTool: null,
+    audioFile: null,
+    audioVolume: 0.9,
     currentTime: 0,
     dancerCounter: 0,
     dancers: [],
@@ -152,6 +157,8 @@
     storageWriteBlocked: false,
     audioUrl: null,
     videoUrl: null,
+    videoFile: null,
+    videoVolume: 0.8,
   };
 
   let saveTimer = null;
@@ -258,6 +265,8 @@
   function replaceDocumentData(project, options = {}) {
     state.projectTitle = normalizeProjectTitle(project.projectTitle);
     state.stageOrientation = normalizeStageOrientation(project.stageOrientation);
+    state.audioVolume = clamp(project.audioVolume ?? 0.9, 0, 1);
+    state.videoVolume = clamp(project.videoVolume ?? 0.8, 0, 1);
     state.duration = clamp(project.duration, 1, 3600);
     const highestDancerNumber = project.dancers.reduce((highest, dancer, index) => {
       const candidate = Number(dancer.number);
@@ -1376,6 +1385,7 @@
 
     pausePlayback();
     if (state.audioUrl) URL.revokeObjectURL(state.audioUrl);
+    state.audioFile = file;
     state.audioUrl = URL.createObjectURL(file);
     elements.audioPlayer.src = state.audioUrl;
     elements.audioName.textContent = file.name;
@@ -1388,6 +1398,7 @@
   function removeAudio(announce = true) {
     pausePlayback();
     const audioUrl = state.audioUrl;
+    state.audioFile = null;
     state.audioUrl = null;
     elements.audioPlayer.removeAttribute("src");
     elements.audioPlayer.load();
@@ -1412,6 +1423,7 @@
 
     pausePlayback();
     if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
+    state.videoFile = file;
     state.videoUrl = URL.createObjectURL(file);
     elements.videoPlayer.src = state.videoUrl;
     elements.videoName.textContent = file.name;
@@ -1425,6 +1437,7 @@
   function removeVideo(announce = true) {
     pausePlayback();
     const videoUrl = state.videoUrl;
+    state.videoFile = null;
     state.videoUrl = null;
     elements.videoPlayer.removeAttribute("src");
     elements.videoPlayer.load();
@@ -1445,6 +1458,8 @@
       duration: state.duration,
       dancerCounter: state.dancerCounter,
       stageOrientation: state.stageOrientation,
+      audioVolume: state.audioVolume,
+      videoVolume: state.videoVolume,
       dancers: state.dancers.map((dancer) => ({
         id: dancer.id,
         number: dancer.number,
@@ -1470,49 +1485,198 @@
     if (options.save !== false) queueSave();
   }
 
-  function exportProject() {
-    const project = serializeProject();
-    const payload = JSON.stringify(project, null, 2);
-    const blob = new Blob([payload], { type: "application/json" });
+  function getSafeProjectFileName(projectTitle = state.projectTitle) {
+    return normalizeProjectTitle(projectTitle)
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-|-$/g, "")
+      .toLowerCase() || "choreography";
+  }
+
+  function downloadBlob(blob, fileName) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const safeName = project.projectTitle.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "choreography";
     link.href = url;
-    link.download = `${safeName}.formation.json`;
+    link.download = fileName;
     document.body.append(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+  }
+
+  function exportProject() {
+    const project = serializeProject();
+    const payload = JSON.stringify(project, null, 2);
+    downloadBlob(new Blob([payload], { type: "application/json" }), `${getSafeProjectFileName(project.projectTitle)}.formation.json`);
     showToast("Plan exported. Audio and video files are not included.");
+  }
+
+  function getMediaPackageEntry(file, kind) {
+    const extensionMatch = String(file?.name || "").toLowerCase().match(/\.([a-z0-9]{1,8})$/);
+    const requestedExtension = extensionMatch?.[1];
+    const allowedExtensions = kind === "audio" ? ["mp3", "wav"] : ["mp4", "webm", "mov"];
+    const fallbackExtension = kind === "audio"
+      ? file?.type === "audio/mpeg" ? "mp3" : "wav"
+      : file?.type === "video/webm" ? "webm" : file?.type === "video/quicktime" ? "mov" : "mp4";
+    const extension = allowedExtensions.includes(requestedExtension) ? requestedExtension : fallbackExtension;
+    return `media/${kind}.${extension}`;
+  }
+
+  async function exportCompleteProject() {
+    const previousText = elements.exportPackageButton.textContent;
+    elements.exportPackageButton.disabled = true;
+    elements.exportPackageButton.textContent = "Packing…";
+    try {
+      const project = serializeProject();
+      const media = { audio: null, video: null };
+      const entries = [{ name: "choreography.json", data: JSON.stringify(project, null, 2) }];
+      for (const [kind, file] of [["audio", state.audioFile], ["video", state.videoFile]]) {
+        if (!file) continue;
+        const entry = getMediaPackageEntry(file, kind);
+        media[kind] = {
+          entry,
+          fileName: String(file.name || `${kind}-track`).slice(0, 255),
+          type: String(file.type || "application/octet-stream").slice(0, 120),
+          size: file.size,
+        };
+        entries.push({ name: entry, data: file });
+      }
+      const manifest = {
+        format: "formation-studio-package",
+        version: 1,
+        createdAt: new Date().toISOString(),
+        projectEntry: "choreography.json",
+        media,
+      };
+      entries.unshift({ name: "manifest.json", data: JSON.stringify(manifest, null, 2) });
+      const archive = await createStoredZip(entries, { maximumBytes: MAX_COMPLETE_PACKAGE_BYTES });
+      downloadBlob(archive, `${getSafeProjectFileName(project.projectTitle)}.formation`);
+      const mediaDescription = state.audioFile || state.videoFile ? " with local media" : "";
+      showToast(`Complete project exported${mediaDescription}.`);
+    } catch (error) {
+      showToast(error?.message?.includes("size limit")
+        ? "The complete project is larger than the 1 GB web export limit."
+        : "The complete project could not be created.");
+    } finally {
+      elements.exportPackageButton.disabled = false;
+      elements.exportPackageButton.textContent = previousText;
+    }
+  }
+
+  function normalizeImportedMediaName(value, fallback) {
+    const normalized = String(value || "")
+      .replace(/[\\/\u0000-\u001f\u007f]+/g, "-")
+      .trim()
+      .slice(0, 180);
+    return normalized || fallback;
+  }
+
+  function isValidPackageMediaDescriptor(descriptor, kind, entries) {
+    if (descriptor === null) return true;
+    if (!descriptor || typeof descriptor !== "object") return false;
+    const validEntry = typeof descriptor.entry === "string" && (
+      kind === "audio"
+        ? /^media\/audio\.(mp3|wav)$/.test(descriptor.entry)
+        : /^media\/video\.(mp4|webm|mov)$/.test(descriptor.entry)
+    );
+    const entry = validEntry ? entries.get(descriptor.entry) : null;
+    if (!entry || Number(descriptor.size) !== entry.size || entry.size > MAX_COMPLETE_PACKAGE_BYTES) return false;
+    const fileName = normalizeImportedMediaName(descriptor.fileName, kind);
+    const extensionIsValid = kind === "audio" ? /\.(mp3|wav)$/i.test(fileName) : /\.(mp4|webm|mov)$/i.test(fileName);
+    const typeIsValid = typeof descriptor.type === "string" && (kind === "audio"
+      ? ["audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/wave"].includes(descriptor.type)
+      : ["video/mp4", "video/webm", "video/quicktime"].includes(descriptor.type));
+    return extensionIsValid || typeIsValid;
+  }
+
+  async function importJsonProject(file) {
+    if (Number(file.size) > MAX_IMPORT_BYTES) throw new Error("Plan is too large");
+    const project = JSON.parse(await file.text());
+    if (!isValidProjectData(project, MAX_DANCERS)) throw new Error("Invalid choreography file");
+    const title = normalizeProjectTitle(project.projectTitle);
+    const shouldImport = window.confirm(
+      `Replace this choreography with “${title}” (${project.dancers.length} dancers)? You can undo this import. Loaded media will stay in place.`,
+    );
+    if (!shouldImport) return;
+
+    pausePlayback();
+    const changed = commitDocumentEdit("import plan", () => {
+      replaceDocumentData(project, { currentTime: 0 });
+    });
+    if (changed) {
+      setCurrentTime(0);
+      showToast("Plan imported. Loaded audio and video were kept; undo is available.");
+    }
+  }
+
+  async function importCompleteProject(file) {
+    if (file.size > MAX_COMPLETE_PACKAGE_BYTES) throw new Error("Package is too large");
+    showToast("Checking complete project…");
+    const entries = await readStoredZip(file, { maximumBytes: MAX_COMPLETE_PACKAGE_BYTES, maximumEntries: 6 });
+    const manifestEntry = entries.get("manifest.json");
+    const projectEntry = entries.get("choreography.json");
+    if (!manifestEntry || manifestEntry.size > 256 * 1024 || !projectEntry || projectEntry.size > MAX_IMPORT_BYTES) {
+      throw new Error("Missing package entries");
+    }
+    const manifest = JSON.parse(await manifestEntry.blob.text());
+    if (
+      manifest?.format !== "formation-studio-package" ||
+      Number(manifest.version) !== 1 ||
+      manifest.projectEntry !== "choreography.json" ||
+      !manifest.media ||
+      !isValidPackageMediaDescriptor(manifest.media.audio, "audio", entries) ||
+      !isValidPackageMediaDescriptor(manifest.media.video, "video", entries)
+    ) throw new Error("Invalid package manifest");
+    const expectedEntries = new Set(["manifest.json", "choreography.json"]);
+    if (manifest.media.audio) expectedEntries.add(manifest.media.audio.entry);
+    if (manifest.media.video) expectedEntries.add(manifest.media.video.entry);
+    if (entries.size !== expectedEntries.size || [...entries.keys()].some((entryName) => !expectedEntries.has(entryName))) {
+      throw new Error("Unexpected package entries");
+    }
+    const project = JSON.parse(await projectEntry.blob.text());
+    if (!isValidProjectData(project, MAX_DANCERS)) throw new Error("Invalid packaged choreography");
+    const title = normalizeProjectTitle(project.projectTitle);
+    const shouldImport = window.confirm(
+      `Open the complete project “${title}” (${project.dancers.length} dancers)? This replaces the current choreography and local media.`,
+    );
+    if (!shouldImport) return;
+
+    const createMediaFile = (descriptor, fallback) => {
+      if (!descriptor) return null;
+      const entry = entries.get(descriptor.entry);
+      return new File(
+        [entry.blob],
+        normalizeImportedMediaName(descriptor.fileName, fallback),
+        { type: descriptor.type || "application/octet-stream", lastModified: Date.now() },
+      );
+    };
+    const audioFile = createMediaFile(manifest.media.audio, "audio-track");
+    const videoFile = createMediaFile(manifest.media.video, "reference-video");
+    removeAudio(false);
+    removeVideo(false);
+    applyProject(project, { clearHistory: true });
+    if (audioFile) handleAudioFile(audioFile);
+    if (videoFile) handleVideoFile(videoFile);
+    showToast("Complete project opened with its saved media.");
   }
 
   async function importProject(file) {
     if (!file) return;
+    const previousText = elements.importButton.textContent;
+    elements.importButton.disabled = true;
+    elements.importButton.textContent = "Importing…";
     try {
-      if (Number(file.size) > MAX_IMPORT_BYTES) {
-        showToast("That plan is too large to import safely.");
-        return;
-      }
-      const project = JSON.parse(await file.text());
-      if (!isValidProjectData(project, MAX_DANCERS)) throw new Error("Invalid choreography file");
-      const title = normalizeProjectTitle(project.projectTitle);
-      const shouldImport = window.confirm(
-        `Replace this choreography with “${title}” (${project.dancers.length} dancers)? You can undo this import. Loaded media will stay in place.`,
-      );
-      if (!shouldImport) return;
-
-      pausePlayback();
-      const changed = commitDocumentEdit("import plan", () => {
-        replaceDocumentData(project, { currentTime: 0 });
-      });
-      if (changed) {
-        setCurrentTime(0);
-        showToast("Plan imported. Loaded audio and video were kept; undo is available.");
-      }
+      const signatureBytes = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+      const isZip = signatureBytes.length === 4 && new DataView(signatureBytes.buffer).getUint32(0, true) === 0x04034b50;
+      if (isZip || /\.formation$/i.test(file.name)) await importCompleteProject(file);
+      else await importJsonProject(file);
     } catch (error) {
-      showToast("That file is not a valid Formation Studio plan.");
+      showToast(error?.message === "Package is too large"
+        ? "That complete project is larger than the 1 GB import limit."
+        : "That file is not a valid Formation Studio project.");
     } finally {
       elements.importInput.value = "";
+      elements.importButton.disabled = false;
+      elements.importButton.textContent = previousText;
     }
   }
 
@@ -1596,6 +1760,10 @@
       elements.durationInput.value = Math.round(state.duration * 100) / 100;
     }
     elements.durationInput.disabled = state.audioUrl !== null || state.videoUrl !== null;
+    elements.volumeInput.value = state.audioVolume;
+    elements.videoVolumeInput.value = state.videoVolume;
+    elements.audioPlayer.volume = state.audioVolume;
+    elements.videoPlayer.volume = state.videoVolume;
     renderDancerList();
     renderSelection();
     renderSelectionControls();
@@ -1725,7 +1893,9 @@
     elements.audioFileButton.addEventListener("click", () => elements.audioInput.click());
     elements.removeAudioButton.addEventListener("click", () => removeAudio());
     elements.volumeInput.addEventListener("input", (event) => {
-      elements.audioPlayer.volume = Number(event.target.value);
+      state.audioVolume = clamp(event.target.value, 0, 1);
+      elements.audioPlayer.volume = state.audioVolume;
+      queueSave();
     });
     elements.audioPlayer.addEventListener("loadedmetadata", () => {
       const audioLength = elements.audioPlayer.duration;
@@ -1749,7 +1919,9 @@
     elements.videoFileButton.addEventListener("click", () => elements.videoInput.click());
     elements.removeVideoButton.addEventListener("click", () => removeVideo());
     elements.videoVolumeInput.addEventListener("input", (event) => {
-      elements.videoPlayer.volume = Number(event.target.value);
+      state.videoVolume = clamp(event.target.value, 0, 1);
+      elements.videoPlayer.volume = state.videoVolume;
+      queueSave();
     });
     elements.videoPlayer.addEventListener("click", togglePlayback);
     elements.videoPlayer.addEventListener("loadedmetadata", () => {
@@ -1771,6 +1943,7 @@
       showToast("The video file could not be read by this browser.");
     });
     elements.exportButton.addEventListener("click", exportProject);
+    elements.exportPackageButton.addEventListener("click", exportCompleteProject);
     elements.importButton.addEventListener("click", () => elements.importInput.click());
     elements.importInput.addEventListener("change", (event) => importProject(event.target.files[0]));
     elements.replaceLocalSaveButton.addEventListener("click", () => {
