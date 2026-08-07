@@ -3,12 +3,16 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  DEFAULT_STAGE_BOUNDS,
   MAX_DANCER_COUNTER,
   MAX_DANCER_ID_LENGTH,
   MAX_TOTAL_KEYFRAMES,
+  applyGroupDelta,
   areDocumentSnapshotsEqual,
+  clampGroupDelta,
   createUniqueLocalDancerId,
   createHistory,
+  displayToStagePosition,
   formatTime,
   getLatestKeyframeTime,
   getPositionAtTime,
@@ -16,14 +20,49 @@ const {
   hasPointerMoved,
   isValidProjectData,
   normalizeDancerName,
+  normalizeStageOrientation,
   normalizeProjectTitle,
   normalizeKeyframes,
   pushHistory,
   redoHistory,
+  samplePolyline,
   shouldPauseAfterPlaybackStartSettles,
+  stageToDisplayPosition,
   undoHistory,
   upsertKeyframe,
 } = require("./core.js");
+
+test("stage orientation mirrors only the vertical coordinate and round-trips", () => {
+  const stored = { x: 22.25, y: 84.75 };
+  assert.deepEqual(stageToDisplayPosition(stored, "front-bottom"), stored);
+  assert.deepEqual(stageToDisplayPosition(stored, "front-top"), { x: 22.25, y: 15.25 });
+  assert.deepEqual(displayToStagePosition({ x: 22.25, y: 15.25 }, "front-top"), stored);
+  assert.equal(normalizeStageOrientation("unexpected"), "front-bottom");
+});
+
+test("group deltas clamp as one rigid formation at stage boundaries", () => {
+  const positions = [{ x: 10, y: 10 }, { x: 90, y: 80 }];
+  assert.deepEqual(clampGroupDelta(positions, { x: 20, y: -20 }), { x: 7.5, y: -6 });
+  assert.deepEqual(applyGroupDelta(positions, { x: 20, y: -20 }), [
+    { x: 17.5, y: 4 },
+    { x: 97.5, y: 74 },
+  ]);
+  assert.deepEqual(clampGroupDelta([], { x: 5, y: 5 }, DEFAULT_STAGE_BOUNDS), { x: 0, y: 0 });
+});
+
+test("polyline sampling distributes positions at equal path distances", () => {
+  assert.deepEqual(samplePolyline([{ x: 0, y: 0 }, { x: 100, y: 0 }], 3), [
+    { x: 0, y: 0 },
+    { x: 50, y: 0 },
+    { x: 100, y: 0 },
+  ]);
+  assert.deepEqual(samplePolyline([{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 50 }], 3), [
+    { x: 0, y: 0 },
+    { x: 50, y: 0 },
+    { x: 50, y: 50 },
+  ]);
+  assert.deepEqual(samplePolyline([{ x: 5, y: 5 }], 4), []);
+});
 
 test("position is held before the first and after the last keyframe", () => {
   const frames = [

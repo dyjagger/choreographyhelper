@@ -7,6 +7,9 @@
   const MAX_DANCER_COUNTER = 1000000;
   const MAX_DANCER_ID_LENGTH = 160;
   const MAX_TOTAL_KEYFRAMES = 50000;
+  const STAGE_ORIENTATION_FRONT_BOTTOM = "front-bottom";
+  const STAGE_ORIENTATION_FRONT_TOP = "front-top";
+  const DEFAULT_STAGE_BOUNDS = Object.freeze({ minX: 2.5, maxX: 97.5, minY: 4, maxY: 94 });
 
   function clamp(value, minimum, maximum) {
     return Math.min(maximum, Math.max(minimum, Number(value)));
@@ -14,6 +17,102 @@
 
   function roundCoordinate(value) {
     return Math.round(clamp(value, 0, 100) * 1000) / 1000;
+  }
+
+  function normalizeStageOrientation(value) {
+    return value === STAGE_ORIENTATION_FRONT_TOP
+      ? STAGE_ORIENTATION_FRONT_TOP
+      : STAGE_ORIENTATION_FRONT_BOTTOM;
+  }
+
+  function stageToDisplayPosition(position, orientation = STAGE_ORIENTATION_FRONT_BOTTOM) {
+    const normalizedOrientation = normalizeStageOrientation(orientation);
+    const x = roundCoordinate(position?.x);
+    const y = roundCoordinate(position?.y);
+    return {
+      x,
+      y: normalizedOrientation === STAGE_ORIENTATION_FRONT_TOP ? roundCoordinate(100 - y) : y,
+    };
+  }
+
+  function displayToStagePosition(position, orientation = STAGE_ORIENTATION_FRONT_BOTTOM) {
+    return stageToDisplayPosition(position, orientation);
+  }
+
+  function normalizeStageBounds(bounds = DEFAULT_STAGE_BOUNDS) {
+    const minX = clamp(bounds?.minX ?? DEFAULT_STAGE_BOUNDS.minX, 0, 100);
+    const maxX = clamp(bounds?.maxX ?? DEFAULT_STAGE_BOUNDS.maxX, minX, 100);
+    const minY = clamp(bounds?.minY ?? DEFAULT_STAGE_BOUNDS.minY, 0, 100);
+    const maxY = clamp(bounds?.maxY ?? DEFAULT_STAGE_BOUNDS.maxY, minY, 100);
+    return { minX, maxX, minY, maxY };
+  }
+
+  function clampGroupDelta(positions, requestedDelta, bounds = DEFAULT_STAGE_BOUNDS) {
+    const safePositions = (Array.isArray(positions) ? positions : [])
+      .filter((position) => Number.isFinite(Number(position?.x)) && Number.isFinite(Number(position?.y)))
+      .map((position) => ({ x: Number(position.x), y: Number(position.y) }));
+    const requestedX = Number(requestedDelta?.x) || 0;
+    const requestedY = Number(requestedDelta?.y) || 0;
+    if (safePositions.length === 0) return { x: 0, y: 0 };
+
+    const normalizedBounds = normalizeStageBounds(bounds);
+    const minimumX = Math.min(...safePositions.map((position) => position.x));
+    const maximumX = Math.max(...safePositions.map((position) => position.x));
+    const minimumY = Math.min(...safePositions.map((position) => position.y));
+    const maximumY = Math.max(...safePositions.map((position) => position.y));
+
+    return {
+      x: clamp(requestedX, normalizedBounds.minX - minimumX, normalizedBounds.maxX - maximumX),
+      y: clamp(requestedY, normalizedBounds.minY - minimumY, normalizedBounds.maxY - maximumY),
+    };
+  }
+
+  function applyGroupDelta(positions, requestedDelta, bounds = DEFAULT_STAGE_BOUNDS) {
+    const safePositions = Array.isArray(positions) ? positions : [];
+    const delta = clampGroupDelta(safePositions, requestedDelta, bounds);
+    return safePositions.map((position) => ({
+      x: roundCoordinate(Number(position.x) + delta.x),
+      y: roundCoordinate(Number(position.y) + delta.y),
+    }));
+  }
+
+  function getPolylineSegments(points) {
+    const safePoints = (Array.isArray(points) ? points : [])
+      .filter((point) => Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y)))
+      .map((point) => ({ x: Number(point.x), y: Number(point.y) }));
+    const segments = [];
+    let totalLength = 0;
+    for (let index = 1; index < safePoints.length; index += 1) {
+      const start = safePoints[index - 1];
+      const end = safePoints[index];
+      const length = Math.hypot(end.x - start.x, end.y - start.y);
+      if (length <= POSITION_EPSILON) continue;
+      segments.push({ start, end, length, offset: totalLength });
+      totalLength += length;
+    }
+    return { segments, totalLength };
+  }
+
+  function samplePolyline(points, count) {
+    const sampleCount = Math.max(0, Math.floor(Number(count) || 0));
+    if (sampleCount === 0) return [];
+    const { segments, totalLength } = getPolylineSegments(points);
+    if (segments.length === 0) return [];
+    if (sampleCount === 1) {
+      const first = segments[0].start;
+      return [{ x: roundCoordinate(first.x), y: roundCoordinate(first.y) }];
+    }
+
+    return Array.from({ length: sampleCount }, (_, index) => {
+      const targetDistance = totalLength * (index / (sampleCount - 1));
+      const segment = segments.find((item) => targetDistance <= item.offset + item.length + POSITION_EPSILON)
+        || segments[segments.length - 1];
+      const progress = clamp((targetDistance - segment.offset) / segment.length, 0, 1);
+      return {
+        x: roundCoordinate(segment.start.x + (segment.end.x - segment.start.x) * progress),
+        y: roundCoordinate(segment.start.y + (segment.end.y - segment.start.y) * progress),
+      };
+    });
   }
 
   function normalizeKeyframes(keyframes) {
@@ -185,7 +284,13 @@
   function isValidProjectData(candidate, maxDancers = 50) {
     if (!candidate || typeof candidate !== "object") return false;
     if (!Array.isArray(candidate.dancers) || candidate.dancers.length > maxDancers) return false;
-    if (candidate.version !== undefined && Number(candidate.version) !== 1) return false;
+    if (candidate.version !== undefined && ![1, 2].includes(Number(candidate.version))) return false;
+    if (
+      candidate.stageOrientation !== undefined &&
+      ![STAGE_ORIENTATION_FRONT_BOTTOM, STAGE_ORIENTATION_FRONT_TOP].includes(candidate.stageOrientation)
+    ) {
+      return false;
+    }
     const duration = Number(candidate.duration);
     if (!Number.isFinite(duration) || duration < 1 || duration > 3600) return false;
     if (
@@ -240,14 +345,20 @@
 
   const api = {
     DEFAULT_HISTORY_LIMIT,
+    DEFAULT_STAGE_BOUNDS,
     MAX_DANCER_COUNTER,
     MAX_DANCER_ID_LENGTH,
     MAX_TOTAL_KEYFRAMES,
     TIME_EPSILON,
+    STAGE_ORIENTATION_FRONT_BOTTOM,
+    STAGE_ORIENTATION_FRONT_TOP,
+    applyGroupDelta,
     areDocumentSnapshotsEqual,
     clamp,
+    clampGroupDelta,
     createUniqueLocalDancerId,
     createHistory,
+    displayToStagePosition,
     formatTime,
     getLatestKeyframeTime,
     getPositionAtTime,
@@ -256,10 +367,13 @@
     isValidProjectData,
     normalizeKeyframes,
     normalizeDancerName,
+    normalizeStageOrientation,
     normalizeProjectTitle,
     pushHistory,
     redoHistory,
+    samplePolyline,
     shouldPauseAfterPlaybackStartSettles,
+    stageToDisplayPosition,
     undoHistory,
     upsertKeyframe,
   };
