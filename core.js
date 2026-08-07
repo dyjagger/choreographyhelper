@@ -116,7 +116,9 @@
       .map((point) => ({ x: roundCoordinate(point.x), y: roundCoordinate(point.y) }));
     if (safePoints.length < 2 || getPolylineLength(safePoints) <= POSITION_EPSILON) return [];
 
-    const straightThreshold = Math.max(0, Number(options.straightThreshold) || 2);
+    const straightThreshold = options.straightThreshold === undefined
+      ? 2
+      : Math.max(0, Number(options.straightThreshold) || 0);
     const start = safePoints[0];
     const end = safePoints[safePoints.length - 1];
     const maximumDeviation = Math.max(...safePoints.map((point) => distanceFromPointToSegment(point, start, end)));
@@ -202,11 +204,15 @@
 
   function normalizeKeyframes(keyframes) {
     return [...keyframes]
-      .map((frame) => ({
-        time: Math.max(0, Number(frame.time)),
-        x: roundCoordinate(frame.x),
-        y: roundCoordinate(frame.y),
-      }))
+      .map((frame) => {
+        const normalized = {
+          time: Math.max(0, Number(frame.time)),
+          x: roundCoordinate(frame.x),
+          y: roundCoordinate(frame.y),
+        };
+        if (typeof frame.hold === "boolean") normalized.hold = frame.hold;
+        return normalized;
+      })
       .sort((a, b) => a.time - b.time);
   }
 
@@ -223,11 +229,44 @@
     return normalizeKeyframes([...normalized, frame]);
   }
 
+  function getHoldStateFromFrames(frames, targetTime) {
+    let event = null;
+    for (const frame of frames) {
+      if (frame.time > targetTime + TIME_EPSILON) break;
+      if (typeof frame.hold === "boolean") event = frame;
+    }
+    return {
+      active: event?.hold === true,
+      event,
+    };
+  }
+
+  function getHoldStateAtTime(keyframes, time) {
+    return getHoldStateFromFrames(normalizeKeyframes(keyframes), Math.max(0, Number(time)));
+  }
+
+  function getHoldIntervals(keyframes) {
+    const intervals = [];
+    let activeStart = null;
+    normalizeKeyframes(keyframes).forEach((frame) => {
+      if (frame.hold === true && !activeStart) {
+        activeStart = frame;
+      } else if (frame.hold === false && activeStart) {
+        intervals.push({ start: activeStart.time, end: frame.time, x: activeStart.x, y: activeStart.y });
+        activeStart = null;
+      }
+    });
+    if (activeStart) intervals.push({ start: activeStart.time, end: null, x: activeStart.x, y: activeStart.y });
+    return intervals;
+  }
+
   function getPositionAtTime(keyframes, time) {
     const frames = normalizeKeyframes(keyframes);
     if (frames.length === 0) return null;
 
     const targetTime = Math.max(0, Number(time));
+    const holdState = getHoldStateFromFrames(frames, targetTime);
+    if (holdState.active) return { x: holdState.event.x, y: holdState.event.y };
     if (targetTime <= frames[0].time) return { x: frames[0].x, y: frames[0].y };
     if (targetTime >= frames[frames.length - 1].time) {
       const last = frames[frames.length - 1];
@@ -380,7 +419,7 @@
   function isValidProjectData(candidate, maxDancers = 50) {
     if (!candidate || typeof candidate !== "object") return false;
     if (!Array.isArray(candidate.dancers) || candidate.dancers.length > maxDancers) return false;
-    if (candidate.version !== undefined && ![1, 2].includes(Number(candidate.version))) return false;
+    if (candidate.version !== undefined && ![1, 2, 3].includes(Number(candidate.version))) return false;
     if (
       candidate.stageOrientation !== undefined &&
       ![STAGE_ORIENTATION_FRONT_BOTTOM, STAGE_ORIENTATION_FRONT_TOP].includes(candidate.stageOrientation)
@@ -433,6 +472,7 @@
 
       const validFrames = dancer.keyframes.every((frame) => {
         if (![frame.time, frame.x, frame.y].every((value) => Number.isFinite(Number(value)))) return false;
+        if (frame.hold !== undefined && typeof frame.hold !== "boolean") return false;
         const time = Number(frame.time);
         const x = Number(frame.x);
         const y = Number(frame.y);
@@ -463,6 +503,8 @@
     displayToStagePosition,
     formatTime,
     getDancerMarkerLabel,
+    getHoldIntervals,
+    getHoldStateAtTime,
     getLatestKeyframeTime,
     getPolylineLength,
     getPositionAtTime,

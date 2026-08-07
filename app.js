@@ -11,6 +11,8 @@
     createHistory,
     formatTime,
     getDancerMarkerLabel,
+    getHoldIntervals,
+    getHoldStateAtTime,
     getLatestKeyframeTime,
     getPolylineLength,
     getNextAvailableDancerNumber,
@@ -80,6 +82,9 @@
     formationPathLine: document.querySelector("#formation-path-line"),
     formationPathOverlay: document.querySelector("#formation-path-overlay"),
     formationPreviewLayer: document.querySelector("#formation-preview-layer"),
+    holdPositionButton: document.querySelector("#hold-position-button"),
+    holdPositionLabel: document.querySelector("#hold-position-label"),
+    holdTrack: document.querySelector("#hold-track"),
     importInput: document.querySelector("#import-input"),
     importButton: document.querySelector("#import-button"),
     keyframeList: document.querySelector("#keyframe-list"),
@@ -194,6 +199,10 @@
   function getSelectedDancers() {
     const selectedIds = new Set(state.selectedDancerIds);
     return state.dancers.filter((dancer) => selectedIds.has(dancer.id));
+  }
+
+  function isDancerHolding(dancer, time = state.currentTime) {
+    return Boolean(dancer && getHoldStateAtTime(dancer.keyframes, time).active);
   }
 
   function setSelectedDancerIds(dancerIds, options = {}) {
@@ -378,35 +387,35 @@
 
   function startNewProject() {
     const shouldReset = window.confirm(
-      "Start a new project? This clears the title, dancers, recorded positions, and playhead. You can undo it. Loaded audio and video will stay in place.",
+      "Start a new project? This permanently clears the choreography, loaded audio, and loaded video. Export anything you want to keep first.",
     );
     if (!shouldReset) return;
 
     pausePlayback();
-    const mediaDurations = getLoadedMediaPlayers()
-      .map((player) => player.duration)
-      .filter((duration) => Number.isFinite(duration) && duration > 0);
-    const freshDuration = clamp(mediaDurations.length > 0
-      ? Math.max(...mediaDurations)
-      : state.audioUrl || state.videoUrl
-        ? state.duration
-        : 60, 1, 3600);
-
-    const changed = commitDocumentEdit("start new project", () => {
-      state.projectTitle = "Untitled choreography";
-      state.dancerCounter = 0;
-      state.dancers = [];
-      state.duration = freshDuration;
-      state.currentTime = 0;
-      state.selectedDancerId = null;
-      state.selectedDancerIds = [];
-      state.stageOrientation = "front-bottom";
-      state.markerElements.forEach((marker) => marker.remove());
-      state.markerElements.clear();
-    });
+    removeAudio(false);
+    removeVideo(false);
+    state.projectTitle = "Untitled choreography";
+    state.dancerCounter = 0;
+    state.dancers = [];
+    state.duration = 60;
+    state.currentTime = 0;
+    state.selectedDancerId = null;
+    state.selectedDancerIds = [];
+    state.stageOrientation = "front-bottom";
+    state.audioVolume = 0.9;
+    state.videoVolume = 0.8;
+    state.activeStageTool = null;
+    state.history = createHistory(HISTORY_LIMIT);
+    projectTitleEditSnapshot = null;
+    elements.stage.dataset.tool = "";
+    clearFormationPathPreview();
+    state.markerElements.forEach((marker) => marker.remove());
+    state.markerElements.clear();
+    renderAll();
     setCurrentTime(0);
+    queueSave();
     elements.addDancerButton.focus();
-    showToast(changed ? "New project started. Undo is available." : "This project is already blank.");
+    showToast("New project started. Previous choreography and media were cleared.");
   }
 
   function addDancer() {
@@ -523,8 +532,10 @@
       marker.style.top = `${displayedPosition.y}%`;
       marker.classList.toggle("is-selected", selectedIds.has(dancer.id));
       marker.classList.toggle("is-primary", dancer.id === state.selectedDancerId);
+      const isHolding = isDancerHolding(dancer);
+      marker.classList.toggle("is-holding", isHolding);
       marker.setAttribute("aria-pressed", String(selectedIds.has(dancer.id)));
-      marker.setAttribute("aria-label", `${dancer.name} at ${Math.round(displayedPosition.x)} percent across and ${Math.round(displayedPosition.y)} percent down.`);
+      marker.setAttribute("aria-label", `${dancer.name} at ${Math.round(displayedPosition.x)} percent across and ${Math.round(displayedPosition.y)} percent down.${isHolding ? " Holding position." : ""}`);
     });
 
     elements.emptyStage.classList.toggle("is-hidden", state.dancers.length > 0);
@@ -672,11 +683,14 @@
     elements.stage.dataset.tool = nextTool || "";
     if (!nextTool) clearFormationPathPreview();
     renderSelectionControls();
-    if (nextTool === "formation-path") showToast("Draw a line or curve on the stage to align the selected dancers.");
+    if (nextTool === "formation-path") showToast("Draw a freeform path. Hold Shift while dragging to snap it straight.");
   }
 
-  function createFormationPathPlan(rawPoints) {
-    const path = prepareFormationPath(rawPoints);
+  function createFormationPathPlan(rawPoints, options = {}) {
+    const sourcePoints = options.forceStraight && rawPoints.length > 1
+      ? [rawPoints[0], rawPoints.at(-1)]
+      : rawPoints;
+    const path = prepareFormationPath(sourcePoints, { straightThreshold: options.forceStraight ? 2 : 0 });
     const selectedDancers = getSelectedDancers();
     if (path.length < 2 || selectedDancers.length < 2) return null;
     const length = getPolylineLength(path);
@@ -737,7 +751,7 @@
       const previous = rawPoints.at(-1);
       if (Math.hypot(point.x - previous.x, point.y - previous.y) < 0.45) return;
       if (rawPoints.length < 500) rawPoints.push(point);
-      latestPlan = createFormationPathPlan(rawPoints);
+      latestPlan = createFormationPathPlan(rawPoints, { forceStraight: moveEvent.shiftKey });
       renderFormationPathPlan(latestPlan);
     }
 
@@ -981,15 +995,23 @@
     const entryMap = new Map(entries.map((entry) => [entry.dancerId, entry]));
     const affectedDancers = state.dancers.filter((dancer) => entryMap.has(dancer.id));
     if (affectedDancers.length === 0) return false;
+    if (options.allowDuringHold !== true && affectedDancers.some((dancer) => isDancerHolding(dancer))) {
+      showToast("End the active hold before moving the held dancer or group.");
+      renderMarkerPositions();
+      return false;
+    }
     const label = options.label || (affectedDancers.length === 1 ? `move ${affectedDancers[0].name}` : `move ${affectedDancers.length} dancers`);
     const changed = commitDocumentEdit(label, () => {
       affectedDancers.forEach((dancer) => {
         const position = entryMap.get(dancer.id);
-        dancer.keyframes = upsertKeyframe(dancer.keyframes, {
+        const existingFrame = dancer.keyframes.find((frame) => Math.abs(frame.time - state.currentTime) <= TIME_EPSILON);
+        const nextFrame = {
           time: state.currentTime,
           x: position.x,
           y: position.y,
-        });
+        };
+        if (existingFrame?.hold === false) nextFrame.hold = false;
+        dancer.keyframes = upsertKeyframe(dancer.keyframes, nextFrame);
       });
     });
     if (changed) {
@@ -997,6 +1019,36 @@
       showToast(`${subject} recorded at ${formatTime(state.currentTime)}.`);
     }
     return changed;
+  }
+
+  function toggleSelectedHold() {
+    const selectedDancers = getSelectedDancers();
+    if (selectedDancers.length === 0) return;
+    pausePlayback();
+    const holdStates = selectedDancers.map((dancer) => getHoldStateAtTime(dancer.keyframes, state.currentTime));
+    const shouldEndHold = holdStates.every((holdState) => holdState.active);
+    const changed = commitDocumentEdit(
+      shouldEndHold ? `end hold for ${selectedDancers.length} dancer${selectedDancers.length === 1 ? "" : "s"}` : `hold ${selectedDancers.length} dancer${selectedDancers.length === 1 ? "" : "s"}`,
+      () => {
+        selectedDancers.forEach((dancer, index) => {
+          const holdState = holdStates[index];
+          if (!shouldEndHold && holdState.active) return;
+          const position = getPositionAtTime(dancer.keyframes, state.currentTime);
+          const frame = {
+            time: state.currentTime,
+            x: position.x,
+            y: position.y,
+          };
+          if (!shouldEndHold) frame.hold = true;
+          else if (Math.abs(holdState.event.time - state.currentTime) > TIME_EPSILON) frame.hold = false;
+          dancer.keyframes = upsertKeyframe(dancer.keyframes, frame);
+        });
+      },
+    );
+    if (!changed) return;
+    showToast(shouldEndHold
+      ? `Hold ended at ${formatTime(state.currentTime)}. Movement can resume.`
+      : `Position held from ${formatTime(state.currentTime)}. Move later and choose End hold to resume.`);
   }
 
   function recordPosition(dancerId, position) {
@@ -1130,6 +1182,57 @@
     elements.formationPathButton.disabled = count < 2;
     elements.formationPathButton.setAttribute("aria-pressed", String(state.activeStageTool === "formation-path"));
     elements.formationPathButton.classList.toggle("is-active", state.activeStageTool === "formation-path");
+    updateHoldControl();
+  }
+
+  function updateHoldControl() {
+    const selectedDancers = getSelectedDancers();
+    const holdingCount = selectedDancers.filter((dancer) => isDancerHolding(dancer)).length;
+    const allHolding = selectedDancers.length > 0 && holdingCount === selectedDancers.length;
+    elements.holdPositionButton.disabled = selectedDancers.length === 0;
+    elements.holdPositionButton.setAttribute("aria-pressed", String(allHolding));
+    elements.holdPositionButton.classList.toggle("is-active", allHolding);
+    elements.holdPositionLabel.textContent = allHolding
+      ? "End hold"
+      : holdingCount > 0
+        ? "Hold selected"
+        : "Hold position";
+    elements.holdPositionButton.title = allHolding
+      ? "Record the end of this hold at the current time"
+      : "Freeze selected dancers at the current time";
+    const singleHeldDancer = selectedDancers.length === 1 && allHolding;
+    elements.xInput.disabled = singleHeldDancer;
+    elements.yInput.disabled = singleHeldDancer;
+    elements.recordCoordinatesButton.disabled = singleHeldDancer;
+    elements.coordinateEditor.title = singleHeldDancer ? "End this hold before changing the dancer's position" : "";
+  }
+
+  function renderHoldTrack(dancer) {
+    const intervals = getHoldIntervals(dancer.keyframes);
+    const ranges = intervals.map((interval) => {
+      const range = document.createElement("span");
+      const end = interval.end ?? state.duration;
+      range.className = "hold-range";
+      range.style.left = `${(interval.start / state.duration) * 100}%`;
+      range.style.width = `${Math.max(0, ((end - interval.start) / state.duration) * 100)}%`;
+      range.dataset.holdStart = interval.start;
+      range.dataset.holdEnd = interval.end ?? state.duration;
+      range.title = interval.end === null
+        ? `Hold from ${formatTime(interval.start)} onward`
+        : `Hold from ${formatTime(interval.start)} to ${formatTime(interval.end)}`;
+      return range;
+    });
+    elements.holdTrack.replaceChildren(...ranges);
+    updateHoldTimelineActiveState();
+    return intervals;
+  }
+
+  function updateHoldTimelineActiveState() {
+    elements.holdTrack.querySelectorAll(".hold-range").forEach((range) => {
+      const start = Number(range.dataset.holdStart);
+      const end = Number(range.dataset.holdEnd);
+      range.classList.toggle("is-current", state.currentTime >= start - TIME_EPSILON && state.currentTime < end - TIME_EPSILON);
+    });
   }
 
   function renderSelection() {
@@ -1137,12 +1240,15 @@
     const selectedDancers = getSelectedDancers();
     elements.keyframeList.replaceChildren();
     elements.keyframeTrack.replaceChildren();
+    elements.holdTrack.replaceChildren();
 
     if (!dancer) {
       elements.selectionText.textContent = "No dancer selected";
       elements.coordinateEditor.classList.add("is-hidden");
       return;
     }
+
+    const holdIntervals = renderHoldTrack(dancer);
 
     if (selectedDancers.length > 1) {
       elements.selectionText.textContent = `${selectedDancers.length} dancers selected · drag any selected dancer to move the group`;
@@ -1156,16 +1262,22 @@
     elements.coordinateEditor.classList.remove("is-hidden");
     elements.xInput.value = displayedCurrentPosition.x.toFixed(1);
     elements.yInput.value = displayedCurrentPosition.y.toFixed(1);
+    const holdStartTimes = new Set(holdIntervals.map((interval) => interval.start.toFixed(3)));
+    const holdEndTimes = new Set(holdIntervals.filter((interval) => interval.end !== null).map((interval) => interval.end.toFixed(3)));
     normalizeKeyframes(dancer.keyframes).forEach((frame) => {
+      const frameIdentity = frame.time.toFixed(3);
+      const holdEvent = holdStartTimes.has(frameIdentity) ? "start" : holdEndTimes.has(frameIdentity) ? "end" : null;
       const displayedFrame = stageToDisplayPosition(frame, state.stageOrientation);
       const dot = document.createElement("span");
       dot.className = "keyframe-dot";
+      if (holdEvent) dot.classList.add(`is-hold-${holdEvent}`);
       dot.style.left = `${(frame.time / state.duration) * 100}%`;
       dot.dataset.keyframeTime = frame.time;
       elements.keyframeTrack.append(dot);
 
       const chip = document.createElement("span");
       chip.className = "keyframe-chip";
+      if (holdEvent) chip.classList.add("is-hold-event", `is-hold-${holdEvent}`);
       chip.title = `x ${displayedFrame.x.toFixed(1)}, y ${displayedFrame.y.toFixed(1)}`;
       chip.dataset.keyframeTime = frame.time;
       chip.dataset.keyframeIdentity = `${dancer.id}:${frame.time.toFixed(3)}`;
@@ -1175,8 +1287,8 @@
       jump.className = "keyframe-jump";
       jump.dataset.dancerId = dancer.id;
       jump.dataset.keyframeIdentity = chip.dataset.keyframeIdentity;
-      jump.textContent = formatTime(frame.time);
-      jump.setAttribute("aria-label", `Go to ${dancer.name} position at ${formatTime(frame.time)}`);
+      jump.textContent = `${holdEvent === "start" ? "Hold " : holdEvent === "end" ? "Resume " : ""}${formatTime(frame.time)}`;
+      jump.setAttribute("aria-label", `Go to ${holdEvent === "start" ? "hold start" : holdEvent === "end" ? "hold end" : `${dancer.name} position`} at ${formatTime(frame.time)}`);
       jump.addEventListener("click", () => {
         pausePlayback();
         setCurrentTime(frame.time);
@@ -1222,6 +1334,8 @@
       elements.timeInput.value = Math.round(state.currentTime * 1000) / 1000;
     }
     renderMarkerPositions();
+    updateHoldControl();
+    updateHoldTimelineActiveState();
     const selected = getSelectedDancer();
     if (selected && document.activeElement !== elements.xInput && document.activeElement !== elements.yInput) {
       const position = getPositionAtTime(selected.keyframes, state.currentTime);
@@ -1462,7 +1576,7 @@
 
   function serializeProject() {
     return {
-      version: 2,
+      version: 3,
       projectTitle: normalizeProjectTitle(state.projectTitle),
       duration: state.duration,
       dancerCounter: state.dancerCounter,
@@ -1887,6 +2001,7 @@
       setSelectedDancerIds(dancerIds, { primaryDancerId: state.selectedDancerId || dancerIds.at(-1) });
     });
     elements.clearSelectionButton.addEventListener("click", () => setSelectedDancerIds([]));
+    elements.holdPositionButton.addEventListener("click", toggleSelectedHold);
     elements.formationPathButton.addEventListener("click", () => setActiveStageTool("formation-path"));
     elements.zoomOutButton.addEventListener("click", () => setStageZoom(state.stageZoom - STAGE_ZOOM_STEP));
     elements.zoomResetButton.addEventListener("click", () => setStageZoom(1));

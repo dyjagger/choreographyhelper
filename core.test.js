@@ -15,6 +15,8 @@ const {
   displayToStagePosition,
   formatTime,
   getDancerMarkerLabel,
+  getHoldIntervals,
+  getHoldStateAtTime,
   getLatestKeyframeTime,
   getPolylineLength,
   getPositionAtTime,
@@ -80,6 +82,10 @@ test("polyline sampling distributes positions at equal path distances", () => {
 test("formation paths straighten rough lines and smooth intentional curves", () => {
   const roughLine = prepareFormationPath([{ x: 10, y: 20 }, { x: 50, y: 21 }, { x: 90, y: 20 }]);
   assert.deepEqual(roughLine, [{ x: 10, y: 20 }, { x: 90, y: 20 }]);
+  assert.ok(prepareFormationPath(
+    [{ x: 10, y: 20 }, { x: 50, y: 21 }, { x: 90, y: 20 }],
+    { straightThreshold: 0 },
+  ).length > 2);
 
   const curve = prepareFormationPath([{ x: 10, y: 80 }, { x: 50, y: 20 }, { x: 90, y: 80 }]);
   assert.ok(curve.length > 3);
@@ -117,6 +123,33 @@ test("position interpolates linearly between keyframes", () => {
   assert.deepEqual(getPositionAtTime(frames, 10.5), { x: 35, y: 40 });
 });
 
+test("hold keyframes freeze movement until an explicit resume keyframe", () => {
+  const openHold = [
+    { time: 0, x: 0, y: 50 },
+    { time: 10, x: 30, y: 50, hold: true },
+    { time: 15, x: 45, y: 50 },
+    { time: 30, x: 90, y: 50 },
+  ];
+  assert.deepEqual(getPositionAtTime(openHold, 5), { x: 15, y: 50 });
+  assert.deepEqual(getPositionAtTime(openHold, 20), { x: 30, y: 50 });
+  assert.deepEqual(getPositionAtTime(openHold, 30), { x: 30, y: 50 });
+  assert.deepEqual(getHoldStateAtTime(openHold, 20), {
+    active: true,
+    event: { time: 10, x: 30, y: 50, hold: true },
+  });
+
+  const completedHold = [
+    ...openHold,
+    { time: 20, x: 30, y: 50, hold: false },
+  ];
+  assert.deepEqual(getPositionAtTime(completedHold, 20), { x: 30, y: 50 });
+  assert.deepEqual(getPositionAtTime(completedHold, 25), { x: 60, y: 50 });
+  assert.deepEqual(getPositionAtTime(completedHold, 30), { x: 90, y: 50 });
+  assert.equal(getHoldStateAtTime(completedHold, 25).active, false);
+  assert.deepEqual(getHoldIntervals(completedHold), [{ start: 10, end: 20, x: 30, y: 50 }]);
+  assert.deepEqual(getHoldIntervals(openHold), [{ start: 10, end: null, x: 30, y: 50 }]);
+});
+
 test("dropping at an existing time replaces rather than duplicates the keyframe", () => {
   const result = upsertKeyframe(
     [{ time: 10, x: 20, y: 30 }],
@@ -138,6 +171,9 @@ test("keyframes are sorted and coordinates are clamped to the stage", () => {
       { time: 8, x: 100, y: 0 },
     ],
   );
+  assert.deepEqual(normalizeKeyframes([{ time: 5, x: 20, y: 30, hold: true }]), [
+    { time: 5, x: 20, y: 30, hold: true },
+  ]);
 });
 
 test("latest keyframe time is found across dancers", () => {
@@ -367,7 +403,7 @@ test("legacy version-one data may omit optional presentation fields", () => {
   }), true);
 });
 
-test("version-two projects accept only supported stage orientations", () => {
+test("versioned projects accept supported presentation and hold fields", () => {
   const base = {
     version: 2,
     duration: 60,
@@ -378,4 +414,14 @@ test("version-two projects accept only supported stage orientations", () => {
   assert.equal(isValidProjectData({ ...base, stageOrientation: "sideways" }), false);
   assert.equal(isValidProjectData({ ...base, audioVolume: 0.4, videoVolume: 1 }), true);
   assert.equal(isValidProjectData({ ...base, audioVolume: 1.1 }), false);
+  assert.equal(isValidProjectData({
+    ...base,
+    version: 3,
+    dancers: [{ id: "holding", keyframes: [{ time: 0, x: 50, y: 50, hold: true }] }],
+  }), true);
+  assert.equal(isValidProjectData({
+    ...base,
+    version: 3,
+    dancers: [{ id: "bad-hold", keyframes: [{ time: 0, x: 50, y: 50, hold: "yes" }] }],
+  }), false);
 });

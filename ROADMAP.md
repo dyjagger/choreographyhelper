@@ -17,6 +17,8 @@ remain release follow-ups.
 - Stage orientation is reversible and must not repeatedly mutate keyframes.
 - A group edit creates synchronized keyframes at the current playhead time and
   is one undoable transaction.
+- Hold and resume events are deterministic timeline data and never depend on
+  runtime AI or playback state.
 - Imported packages are untrusted input and must be bounded and validated
   before replacing the open project.
 - The web and Windows editions share the same editor and project format.
@@ -149,3 +151,13 @@ Release validation on a Windows machine:
 - Install and uninstall on a clean user account.
 - Confirm `.formation` file association and double-click opening.
 - Confirm media playback and complete-project round trips in the installed app.
+
+## Milestone 7: Hold Position and editing refinements
+
+Status: complete on the feature branch.
+
+- Clear loaded audio and video when starting a confirmed new project.
+- Record hold and resume events for one or many selected dancers.
+- Show active holds on dancer markers and the timeline.
+- Keep freeform path drawing as the default and snap straight while Shift is held.
+- Keep version-one and version-two projects importable while exporting version three.

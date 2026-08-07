@@ -80,6 +80,10 @@
             <div class="stage-actionbar" aria-label="Stage selection tools">
               <button id="select-all-button" class="stage-action-button" type="button">Select all</button>
               <button id="clear-selection-button" class="stage-action-button" type="button">Clear</button>
+              <button id="hold-position-button" class="stage-action-button" type="button" aria-pressed="false" disabled>
+                <span aria-hidden="true">⏸</span>
+                <span id="hold-position-label">Hold position</span>
+              </button>
               <button id="formation-path-button" class="stage-action-button" type="button" aria-pressed="false">
                 <span aria-hidden="true">〰</span>
                 Align to path
@@ -142,6 +146,7 @@
             </div>
 
             <div class="timeline-wrap">
+              <div id="hold-track" class="hold-track" aria-hidden="true"></div>
               <div id="keyframe-track" class="keyframe-track" aria-hidden="true"></div>
               <input
                 id="timeline"
@@ -267,7 +272,7 @@
           <section class="panel-section tips-section">
             <p class="section-label">How it works</p>
             <ol>
-              <li>Add and select a dancer.</li>
+              <li>Add and select a dancer. Shift-click or click-drag on the stage to select multiple dancers.</li>
               <li>Move the timeline to the desired time.</li>
               <li>Drag the dancer. Dropping it records that position.</li>
               <li>Add another position later, then press play.</li>
