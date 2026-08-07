@@ -79,7 +79,7 @@ Status: complete.
 - Replace scalar selection with an ordered selection collection and a primary
   dancer.
 - Support modifier-click, selection rectangle, Select all, and Clear.
-- Add an explicit multi-select mode for touch.
+- Let touch users add or remove dancers directly without a separate mode.
 - Drag or nudge the selected dancers as a rigid group.
 - Clamp the shared movement delta so relative spacing is preserved.
 

@@ -341,14 +341,19 @@ input:focus-visible,
 .stage-orientation-control {
   display: flex;
   align-items: center;
+  gap: 7px;
+}
+
+.stage-orientation-options {
+  display: flex;
+  align-items: center;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--field-bg);
 }
 
-.stage-orientation-control > span {
-  padding: 0 8px;
+.stage-orientation-label {
   color: var(--muted);
   font-size: 0.68rem;
   font-weight: 760;
@@ -358,11 +363,14 @@ input:focus-visible,
   min-height: 32px;
   padding: 0 9px;
   border: 0;
-  border-left: 1px solid var(--line);
   color: var(--quiet-ink);
   background: transparent;
   font-size: 0.7rem;
   font-weight: 760;
+}
+
+.stage-option-button + .stage-option-button {
+  border-left: 1px solid var(--line);
 }
 
 .stage-option-button[aria-pressed="true"] {
@@ -808,26 +816,6 @@ input:focus-visible,
   gap: 7px;
 }
 
-.dancer-name-editor {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 800;
-}
-
-.dancer-name-editor input {
-  width: min(190px, 36vw);
-  padding: 7px 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--ink);
-  background: var(--field-bg);
-  font-size: 0.76rem;
-  font-weight: 650;
-}
-
 .coordinate-editor label {
   display: flex;
   align-items: center;
@@ -1163,11 +1151,16 @@ input:focus-visible,
   min-width: 0;
   flex: 1;
   gap: 9px;
+}
+
+.dancer-select-button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
   padding: 0;
   border: 0;
-  color: var(--ink);
   background: transparent;
-  text-align: left;
+  border-radius: 50%;
 }
 
 .dancer-swatch {
@@ -1185,15 +1178,32 @@ input:focus-visible,
 
 .dancer-row-copy {
   display: grid;
+  flex: 1;
   min-width: 0;
   gap: 1px;
 }
 
-.dancer-row-copy strong {
-  overflow: hidden;
+.dancer-name-inline {
+  width: 100%;
+  min-width: 0;
+  margin-left: -5px;
+  padding: 3px 5px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink);
+  background: transparent;
   font-size: 0.8rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 750;
+}
+
+.dancer-name-inline:hover {
+  border-color: var(--line);
+}
+
+.dancer-name-inline:focus {
+  border-color: var(--purple);
+  outline: 2px solid color-mix(in srgb, var(--purple) 18%, transparent);
+  background: var(--field-bg);
 }
 
 .dancer-row-copy small {
@@ -1201,7 +1211,6 @@ input:focus-visible,
   font-size: 0.66rem;
 }
 
-.edit-dancer,
 .remove-dancer {
   display: grid;
   place-items: center;
@@ -1213,15 +1222,6 @@ input:focus-visible,
   color: var(--remove-ink);
   background: transparent;
   font-size: 1.05rem;
-}
-
-.edit-dancer {
-  font-size: 0.92rem;
-}
-
-.edit-dancer:hover {
-  color: var(--purple);
-  background: var(--purple-soft);
 }
 
 .remove-dancer:hover {
@@ -1486,16 +1486,6 @@ input:focus-visible,
     gap: 12px;
   }
 
-  .dancer-name-editor {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    width: 100%;
-  }
-
-  .dancer-name-editor input {
-    width: 100%;
-  }
-
   .coordinate-editor {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1596,18 +1586,13 @@ input:focus-visible,
     min-height: 44px;
   }
 
-  .dancer-row-main,
-  .edit-dancer,
+  .dancer-select-button,
   .remove-dancer,
   .keyframe-jump,
   .keyframe-chip .remove-keyframe,
   .audio-details .icon-button {
     min-width: 44px;
     min-height: 44px;
-  }
-
-  .dancer-row-main {
-    min-width: 0;
   }
 
   .keyframe-chip {

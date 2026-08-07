@@ -29,13 +29,13 @@ Use the **Go to** field or a recorded-position time to move the playhead to an e
 
 Use **New project** to clear the title, dancers, recorded positions, and playhead after a confirmation. The reset is undoable and keeps locally loaded music or video in place.
 
-Up to 50 dancers are supported. Dancers can be renamed when selected or with the edit control in the cast list. The front of the stage can be shown at the top or bottom without rewriting saved keyframes.
+Up to 50 dancers are supported. Edit dancer names directly in the cast list. Unnamed dancers use their number on the stage; named dancers use the first two characters of their name, such as `Ma` for Maya. The front of the stage can be shown at the top or bottom without rewriting saved keyframes.
 
 Use the `−`, `100%`, and `+` controls, the mouse wheel, or a two-finger pinch to zoom the stage. Pinch movement also pans the zoomed view.
 
-Use modifier-click or a desktop selection rectangle to select several dancers. Touch devices have an explicit **Multi-select** mode. Dragging any selected dancer or pressing an arrow key moves the selected formation as one rigid group and records one undoable edit at the current playhead time.
+Use modifier-click or a desktop selection rectangle to select several dancers. On touch screens, tap dancers to add or remove them from the selection. **Select all** and **Clear** provide quick selection controls. Dragging any selected dancer or pressing an arrow key moves the selected formation as one rigid group and records one undoable edit at the current playhead time.
 
-Select two or more dancers and activate **Align to path** to draw a straight line or freehand curve. Numbered ghost markers preview the result before the dancers are evenly placed along the path.
+Select two or more dancers and activate **Align to path** to draw a straight line or freehand curve. Labeled ghost markers preview the result before the dancers are evenly placed along the path.
 
 Audio and video remain local to the device. **Export JSON** creates a portable choreography-only plan. **Export complete** creates a validated `.formation` package containing the choreography, volume settings, audio, and video. Complete web packages are bounded to 1 GB. Import accepts both formats; JSON import keeps currently loaded media, while complete-project import replaces it with the packaged media. Music and video have independent volume controls. The app starts in dark mode and remembers any later theme choice in that browser.
 

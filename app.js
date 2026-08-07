@@ -10,6 +10,7 @@
     createUniqueLocalDancerId,
     createHistory,
     formatTime,
+    getDancerMarkerLabel,
     getLatestKeyframeTime,
     getPolylineLength,
     getNextAvailableDancerNumber,
@@ -69,8 +70,6 @@
     coordinateEditor: document.querySelector("#coordinate-editor"),
     dancerCount: document.querySelector("#dancer-count"),
     dancerList: document.querySelector("#dancer-list"),
-    dancerNameEditor: document.querySelector("#dancer-name-editor"),
-    dancerNameInput: document.querySelector("#dancer-name-input"),
     durationInput: document.querySelector("#duration-input"),
     emptyStage: document.querySelector("#empty-stage"),
     exportButton: document.querySelector("#export-button"),
@@ -86,7 +85,6 @@
     keyframeList: document.querySelector("#keyframe-list"),
     keyframeTrack: document.querySelector("#keyframe-track"),
     markerLayer: document.querySelector("#marker-layer"),
-    multiSelectButton: document.querySelector("#multi-select-button"),
     newDancerNameInput: document.querySelector("#new-dancer-name"),
     newProjectButton: document.querySelector("#new-project-button"),
     playButton: document.querySelector("#play-button"),
@@ -153,7 +151,6 @@
     selectedDancerIds: [],
     stageOrientation: "front-bottom",
     stageZoom: 1,
-    multiSelectMode: false,
     storageWriteBlocked: false,
     audioUrl: null,
     videoUrl: null,
@@ -467,7 +464,7 @@
   }
 
   function findDancerListButton(dancerId) {
-    return [...elements.dancerList.querySelectorAll(".dancer-row-main")]
+    return [...elements.dancerList.querySelectorAll(".dancer-select-button")]
       .find((button) => button.dataset.dancerId === dancerId) || null;
   }
 
@@ -495,7 +492,7 @@
     marker.className = "dancer-marker";
     marker.dataset.dancerId = dancer.id;
     marker.style.setProperty("--marker-color", dancer.color);
-    marker.textContent = dancer.number;
+    marker.textContent = getDancerMarkerLabel(dancer.name, dancer.number);
     marker.setAttribute("aria-label", `${dancer.name}. Drag to set position at the current time.`);
 
     marker.addEventListener("pointerdown", startMarkerDrag);
@@ -521,6 +518,7 @@
       const position = getPositionAtTime(dancer.keyframes, state.currentTime);
       if (!position) return;
       const displayedPosition = stageToDisplayPosition(position, state.stageOrientation);
+      marker.textContent = getDancerMarkerLabel(dancer.name, dancer.number);
       marker.style.left = `${displayedPosition.x}%`;
       marker.style.top = `${displayedPosition.y}%`;
       marker.classList.toggle("is-selected", selectedIds.has(dancer.id));
@@ -658,12 +656,6 @@
     if (stageTouchPointers.size < 2) stagePinchGesture = null;
   }
 
-  function toggleMultiSelectMode() {
-    state.multiSelectMode = !state.multiSelectMode;
-    renderSelectionControls();
-    showToast(state.multiSelectMode ? "Multi-select on. Tap dancers to add or remove them." : "Multi-select off.");
-  }
-
   function clearFormationPathPreview() {
     elements.formationPathLine.setAttribute("points", "");
     elements.formationPathOverlay.classList.add("is-hidden");
@@ -677,7 +669,6 @@
       return;
     }
     state.activeStageTool = nextTool;
-    if (nextTool) state.multiSelectMode = false;
     elements.stage.dataset.tool = nextTool || "";
     if (!nextTool) clearFormationPathPreview();
     renderSelectionControls();
@@ -721,7 +712,7 @@
       preview.style.left = `${entry.x}%`;
       preview.style.top = `${entry.y}%`;
       preview.style.setProperty("--marker-color", dancer?.color || "#7156d9");
-      preview.textContent = dancer?.number || "";
+      preview.textContent = dancer ? getDancerMarkerLabel(dancer.name, dancer.number) : "";
       return preview;
     });
     elements.formationPreviewLayer.replaceChildren(...previews);
@@ -866,9 +857,11 @@
     const marker = event.currentTarget;
     const dancerId = marker.dataset.dancerId;
     const usesSelectionModifier = event.shiftKey || event.ctrlKey || event.metaKey;
+    const usesTouchSelection = event.pointerType === "touch";
     const wasSelected = state.selectedDancerIds.includes(dancerId);
+    const selectionBeforePointerDown = [...state.selectedDancerIds];
 
-    if (usesSelectionModifier || (state.multiSelectMode && !wasSelected)) {
+    if (usesSelectionModifier) {
       selectDancer(dancerId, { toggle: true });
       return;
     }
@@ -924,9 +917,10 @@
           dancerId: position.dancerId,
           ...displayToStagePosition(position, state.stageOrientation),
         })));
-      } else if (state.multiSelectMode) {
-        selectDancer(dancerId, { toggle: true });
-      } else if (state.selectedDancerIds.length > 1) {
+      } else if (usesTouchSelection) {
+        if (wasSelected) selectDancer(dancerId, { toggle: true });
+        else setSelectedDancerIds([...selectionBeforePointerDown, dancerId], { primaryDancerId: dancerId });
+      } else if (!usesTouchSelection && state.selectedDancerIds.length > 1) {
         selectDancer(dancerId);
       } else {
         renderMarkerPositions();
@@ -1024,16 +1018,16 @@
     (keyframeButton || state.markerElements.get(dancer.id))?.focus();
   }
 
-  function renameSelectedDancer() {
-    const dancer = getSelectedDancer();
-    if (!dancer) return;
-    const nextName = normalizeDancerName(elements.dancerNameInput.value, `Dancer ${dancer.number}`);
+  function renameDancer(dancerId, value) {
+    const dancer = state.dancers.find((item) => item.id === dancerId);
+    if (!dancer) return "";
+    const nextName = normalizeDancerName(value, `Dancer ${dancer.number}`);
     const previousName = dancer.name;
     const changed = commitDocumentEdit(`rename ${previousName}`, () => {
       dancer.name = nextName;
     });
-    elements.dancerNameInput.value = changed ? nextName : dancer.name;
     if (changed) showToast(`${previousName} renamed to ${nextName}.`);
+    return nextName;
   }
 
   function renderDancerList() {
@@ -1056,29 +1050,60 @@
       row.classList.toggle("is-selected", selectedIds.has(dancer.id));
       row.classList.toggle("is-primary", dancer.id === state.selectedDancerId);
 
+      const main = document.createElement("div");
+      main.className = "dancer-row-main";
+
       const selectButton = document.createElement("button");
       selectButton.type = "button";
-      selectButton.className = "dancer-row-main";
+      selectButton.className = "dancer-select-button";
       selectButton.dataset.dancerId = dancer.id;
       selectButton.setAttribute("aria-pressed", String(selectedIds.has(dancer.id)));
+      selectButton.setAttribute("aria-label", `Select ${dancer.name}`);
       selectButton.addEventListener("click", (event) => selectDancer(dancer.id, {
         restoreListFocus: true,
-        toggle: state.multiSelectMode || event.shiftKey || event.ctrlKey || event.metaKey,
+        toggle: event.shiftKey || event.ctrlKey || event.metaKey,
       }));
 
       const swatch = document.createElement("span");
       swatch.className = "dancer-swatch";
       swatch.style.setProperty("--dancer-color", dancer.color);
-      swatch.textContent = dancer.number;
+      swatch.textContent = getDancerMarkerLabel(dancer.name, dancer.number);
 
-      const copy = document.createElement("span");
+      const copy = document.createElement("label");
       copy.className = "dancer-row-copy";
-      const name = document.createElement("strong");
-      name.textContent = dancer.name;
+      const name = document.createElement("input");
+      name.className = "dancer-name-inline";
+      name.type = "text";
+      name.maxLength = 80;
+      name.autocomplete = "off";
+      name.value = dancer.name;
+      name.setAttribute("aria-label", `Name for dancer ${dancer.number}`);
+      name.title = "Edit dancer name";
+      name.addEventListener("input", (event) => {
+        const previewLabel = getDancerMarkerLabel(event.currentTarget.value, dancer.number);
+        swatch.textContent = previewLabel;
+        const marker = state.markerElements.get(dancer.id);
+        if (marker) marker.textContent = previewLabel;
+      });
+      name.addEventListener("change", (event) => renameDancer(dancer.id, event.currentTarget.value));
+      name.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          event.currentTarget.value = dancer.name;
+          swatch.textContent = getDancerMarkerLabel(dancer.name, dancer.number);
+          const marker = state.markerElements.get(dancer.id);
+          if (marker) marker.textContent = getDancerMarkerLabel(dancer.name, dancer.number);
+          event.currentTarget.blur();
+        }
+      });
       const frames = document.createElement("small");
       frames.textContent = `${dancer.keyframes.length} position${dancer.keyframes.length === 1 ? "" : "s"}`;
       copy.append(name, frames);
-      selectButton.append(swatch, copy);
+      selectButton.append(swatch);
+      main.append(selectButton, copy);
 
       const removeButton = document.createElement("button");
       removeButton.type = "button";
@@ -1087,18 +1112,7 @@
       removeButton.setAttribute("aria-label", `Remove ${dancer.name}`);
       removeButton.addEventListener("click", () => removeDancer(dancer.id));
 
-      const editButton = document.createElement("button");
-      editButton.type = "button";
-      editButton.className = "edit-dancer";
-      editButton.textContent = "✎";
-      editButton.setAttribute("aria-label", `Edit ${dancer.name}'s name`);
-      editButton.addEventListener("click", () => {
-        selectDancer(dancer.id);
-        elements.dancerNameInput.focus();
-        elements.dancerNameInput.select();
-      });
-
-      row.append(selectButton, editButton, removeButton);
+      row.append(main, removeButton);
       elements.dancerList.append(row);
     });
   }
@@ -1111,8 +1125,6 @@
       clearFormationPathPreview();
     }
     elements.selectionCount.textContent = `${count} selected`;
-    elements.multiSelectButton.setAttribute("aria-pressed", String(state.multiSelectMode));
-    elements.multiSelectButton.classList.toggle("is-active", state.multiSelectMode);
     elements.selectAllButton.disabled = state.dancers.length === 0 || count === state.dancers.length;
     elements.clearSelectionButton.disabled = count === 0;
     elements.formationPathButton.disabled = count < 2;
@@ -1129,14 +1141,12 @@
     if (!dancer) {
       elements.selectionText.textContent = "No dancer selected";
       elements.coordinateEditor.classList.add("is-hidden");
-      elements.dancerNameEditor.classList.add("is-hidden");
       return;
     }
 
     if (selectedDancers.length > 1) {
       elements.selectionText.textContent = `${selectedDancers.length} dancers selected · drag any selected dancer to move the group`;
       elements.coordinateEditor.classList.add("is-hidden");
-      elements.dancerNameEditor.classList.add("is-hidden");
       return;
     }
 
@@ -1144,8 +1154,6 @@
     const displayedCurrentPosition = stageToDisplayPosition(currentPosition, state.stageOrientation);
     elements.selectionText.textContent = `${dancer.name} · ${dancer.keyframes.length} recorded position${dancer.keyframes.length === 1 ? "" : "s"}`;
     elements.coordinateEditor.classList.remove("is-hidden");
-    elements.dancerNameEditor.classList.remove("is-hidden");
-    if (document.activeElement !== elements.dancerNameInput) elements.dancerNameInput.value = dancer.name;
     elements.xInput.value = displayedCurrentPosition.x.toFixed(1);
     elements.yInput.value = displayedCurrentPosition.y.toFixed(1);
     normalizeKeyframes(dancer.keyframes).forEach((frame) => {
@@ -1874,7 +1882,6 @@
     });
     elements.frontTopButton.addEventListener("click", () => setStageOrientation("front-top"));
     elements.frontBottomButton.addEventListener("click", () => setStageOrientation("front-bottom"));
-    elements.multiSelectButton.addEventListener("click", toggleMultiSelectMode);
     elements.selectAllButton.addEventListener("click", () => {
       const dancerIds = state.dancers.map((dancer) => dancer.id);
       setSelectedDancerIds(dancerIds, { primaryDancerId: state.selectedDancerId || dancerIds.at(-1) });
@@ -2001,17 +2008,6 @@
     elements.projectTitle.addEventListener("input", updateProjectTitleFromInput);
     elements.projectTitle.addEventListener("change", finishProjectTitleEdit);
     elements.projectTitle.addEventListener("blur", finishProjectTitleEdit);
-    elements.dancerNameInput.addEventListener("change", renameSelectedDancer);
-    elements.dancerNameInput.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        event.currentTarget.blur();
-      } else if (event.key === "Escape") {
-        event.preventDefault();
-        event.currentTarget.value = getSelectedDancer()?.name || "";
-        event.currentTarget.blur();
-      }
-    });
     elements.recordCoordinatesButton.addEventListener("click", () => {
       const dancer = getSelectedDancer();
       if (!dancer) return;

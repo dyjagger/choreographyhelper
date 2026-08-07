@@ -280,6 +280,17 @@
     return (normalized || normalizedFallback).slice(0, safeLimit);
   }
 
+  function getDancerMarkerLabel(name, dancerNumber) {
+    const safeNumber = Number.isSafeInteger(Number(dancerNumber)) && Number(dancerNumber) > 0
+      ? String(Number(dancerNumber))
+      : "?";
+    const fallbackName = `Dancer ${safeNumber}`;
+    const normalizedName = normalizeDancerName(name, fallbackName);
+    if (normalizedName === fallbackName) return safeNumber;
+    const characters = Array.from(normalizedName).slice(0, 2);
+    return Array.from(`${characters[0].toLocaleUpperCase()}${characters[1] || ""}`).slice(0, 2).join("");
+  }
+
   function normalizeProjectTitle(value, fallback = "Untitled choreography", maxLength = 120) {
     const safeLimit = Math.max(1, Math.floor(Number(maxLength) || 120));
     const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
@@ -451,6 +462,7 @@
     createHistory,
     displayToStagePosition,
     formatTime,
+    getDancerMarkerLabel,
     getLatestKeyframeTime,
     getPolylineLength,
     getPositionAtTime,

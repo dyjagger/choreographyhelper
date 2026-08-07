@@ -14,6 +14,7 @@ const {
   createHistory,
   displayToStagePosition,
   formatTime,
+  getDancerMarkerLabel,
   getLatestKeyframeTime,
   getPolylineLength,
   getPositionAtTime,
@@ -41,6 +42,15 @@ test("stage orientation mirrors only the vertical coordinate and round-trips", (
   assert.deepEqual(stageToDisplayPosition(stored, "front-top"), { x: 22.25, y: 15.25 });
   assert.deepEqual(displayToStagePosition({ x: 22.25, y: 15.25 }, "front-top"), stored);
   assert.equal(normalizeStageOrientation("unexpected"), "front-bottom");
+});
+
+test("stage marker labels use a name prefix and retain numbers for unnamed dancers", () => {
+  assert.equal(getDancerMarkerLabel("Maya", 1), "Ma");
+  assert.equal(getDancerMarkerLabel("maya", 1), "Ma");
+  assert.equal(getDancerMarkerLabel("AJ", 2), "AJ");
+  assert.equal(getDancerMarkerLabel("李明", 3), "李明");
+  assert.equal(getDancerMarkerLabel("Dancer 4", 4), "4");
+  assert.equal(getDancerMarkerLabel("", 12), "12");
 });
 
 test("group deltas clamp as one rigid formation at stage boundaries", () => {

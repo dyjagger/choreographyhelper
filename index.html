@@ -56,10 +56,12 @@
                 <p id="stage-instructions" class="stage-help">Select a time, then drag a dancer to record a position.</p>
               </div>
               <div class="stage-header-tools">
-                <div class="stage-orientation-control" role="group" aria-label="Front of stage position">
-                  <span>Front</span>
-                  <button id="front-top-button" class="stage-option-button" type="button" aria-pressed="false">Top</button>
-                  <button id="front-bottom-button" class="stage-option-button" type="button" aria-pressed="true">Bottom</button>
+                <div class="stage-orientation-control">
+                  <span class="stage-orientation-label">Front</span>
+                  <div class="stage-orientation-options" role="group" aria-label="Front of stage position">
+                    <button id="front-top-button" class="stage-option-button" type="button" aria-pressed="false">Top</button>
+                    <button id="front-bottom-button" class="stage-option-button" type="button" aria-pressed="true">Bottom</button>
+                  </div>
                 </div>
                 <div class="stage-zoom-control" role="group" aria-label="Stage zoom">
                   <button id="zoom-out-button" type="button" aria-label="Zoom out">−</button>
@@ -76,10 +78,6 @@
             </div>
 
             <div class="stage-actionbar" aria-label="Stage selection tools">
-              <button id="multi-select-button" class="stage-action-button" type="button" aria-pressed="false">
-                <span aria-hidden="true">◎</span>
-                Multi-select
-              </button>
               <button id="select-all-button" class="stage-action-button" type="button">Select all</button>
               <button id="clear-selection-button" class="stage-action-button" type="button">Clear</button>
               <button id="formation-path-button" class="stage-action-button" type="button" aria-pressed="false">
@@ -162,10 +160,6 @@
                 <p class="section-label">Selected dancer</p>
                 <p id="selection-text">No dancer selected</p>
               </div>
-              <label id="dancer-name-editor" class="dancer-name-editor is-hidden" for="dancer-name-input">
-                Name
-                <input id="dancer-name-input" type="text" maxlength="80" autocomplete="off" />
-              </label>
               <div id="coordinate-editor" class="coordinate-editor is-hidden" aria-label="Selected dancer coordinates">
                 <label for="x-input">X <input id="x-input" type="number" min="0" max="100" step="0.1" /></label>
                 <label for="y-input">Y <input id="y-input" type="number" min="0" max="100" step="0.1" /></label>
