@@ -4,6 +4,7 @@
   const {
     MAX_DANCER_COUNTER,
     TIME_EPSILON,
+    applyGroupDelta,
     areDocumentSnapshotsEqual,
     clamp,
     createUniqueLocalDancerId,
@@ -58,6 +59,7 @@
     audioName: document.querySelector("#audio-name"),
     audioPlayer: document.querySelector("#audio-player"),
     currentTime: document.querySelector("#current-time"),
+    clearSelectionButton: document.querySelector("#clear-selection-button"),
     coordinateEditor: document.querySelector("#coordinate-editor"),
     dancerCount: document.querySelector("#dancer-count"),
     dancerList: document.querySelector("#dancer-list"),
@@ -73,6 +75,7 @@
     keyframeList: document.querySelector("#keyframe-list"),
     keyframeTrack: document.querySelector("#keyframe-track"),
     markerLayer: document.querySelector("#marker-layer"),
+    multiSelectButton: document.querySelector("#multi-select-button"),
     newDancerNameInput: document.querySelector("#new-dancer-name"),
     newProjectButton: document.querySelector("#new-project-button"),
     playButton: document.querySelector("#play-button"),
@@ -84,6 +87,9 @@
     recordCoordinatesButton: document.querySelector("#record-coordinates-button"),
     restartButton: document.querySelector("#restart-button"),
     saveStatus: document.querySelector("#save-status"),
+    selectAllButton: document.querySelector("#select-all-button"),
+    selectionCount: document.querySelector("#selection-count"),
+    selectionMarquee: document.querySelector("#selection-marquee"),
     selectionText: document.querySelector("#selection-text"),
     stage: document.querySelector("#stage"),
     stageViewport: document.querySelector("#stage-viewport"),
@@ -130,8 +136,10 @@
     projectTitle: "Untitled choreography",
     rafId: null,
     selectedDancerId: null,
+    selectedDancerIds: [],
     stageOrientation: "front-bottom",
     stageZoom: 1,
+    multiSelectMode: false,
     storageWriteBlocked: false,
     audioUrl: null,
     videoUrl: null,
@@ -170,6 +178,27 @@
     return state.dancers.find((dancer) => dancer.id === state.selectedDancerId) || null;
   }
 
+  function getSelectedDancers() {
+    const selectedIds = new Set(state.selectedDancerIds);
+    return state.dancers.filter((dancer) => selectedIds.has(dancer.id));
+  }
+
+  function setSelectedDancerIds(dancerIds, options = {}) {
+    const availableIds = new Set(state.dancers.map((dancer) => dancer.id));
+    const nextIds = [...new Set(Array.isArray(dancerIds) ? dancerIds : [])]
+      .filter((dancerId) => availableIds.has(dancerId));
+    const requestedPrimary = options.primaryDancerId;
+    state.selectedDancerIds = nextIds;
+    state.selectedDancerId = nextIds.includes(requestedPrimary)
+      ? requestedPrimary
+      : nextIds.at(-1) || null;
+    if (options.render === false) return;
+    renderSelection();
+    renderDancerList();
+    renderMarkerPositions();
+    renderSelectionControls();
+  }
+
   function getLoadedMediaPlayers() {
     const players = [];
     if (state.audioUrl) players.push(elements.audioPlayer);
@@ -202,6 +231,7 @@
       project: serializeProject(),
       currentTime: state.currentTime,
       selectedDancerId: state.selectedDancerId,
+      selectedDancerIds: [...state.selectedDancerIds],
     };
   }
 
@@ -247,10 +277,18 @@
       .map((player) => player.duration)
       .filter((duration) => Number.isFinite(duration) && duration > 0);
     if (loadedMediaDurations.length > 0) state.duration = Math.max(state.duration, ...loadedMediaDurations);
-    const requestedSelection = options.selectedDancerId;
-    state.selectedDancerId = state.dancers.some((dancer) => dancer.id === requestedSelection)
-      ? requestedSelection
-      : state.dancers[0]?.id || null;
+    const hasExplicitSelection = Array.isArray(options.selectedDancerIds) || options.selectedDancerId !== undefined;
+    const requestedSelections = Array.isArray(options.selectedDancerIds)
+      ? options.selectedDancerIds
+      : options.selectedDancerId
+        ? [options.selectedDancerId]
+        : [];
+    const availableIds = new Set(state.dancers.map((dancer) => dancer.id));
+    state.selectedDancerIds = [...new Set(requestedSelections)].filter((dancerId) => availableIds.has(dancerId));
+    if (!hasExplicitSelection && state.dancers[0]) state.selectedDancerIds = [state.dancers[0].id];
+    state.selectedDancerId = state.selectedDancerIds.includes(options.selectedDancerId)
+      ? options.selectedDancerId
+      : state.selectedDancerIds.at(-1) || null;
     state.currentTime = clamp(options.currentTime ?? 0, 0, state.duration);
     state.markerElements.forEach((marker) => marker.remove());
     state.markerElements.clear();
@@ -346,6 +384,7 @@
       state.duration = freshDuration;
       state.currentTime = 0;
       state.selectedDancerId = null;
+      state.selectedDancerIds = [];
       state.stageOrientation = "front-bottom";
       state.markerElements.forEach((marker) => marker.remove());
       state.markerElements.clear();
@@ -379,6 +418,7 @@
       };
       state.dancers.push(dancer);
       state.selectedDancerId = dancer.id;
+      state.selectedDancerIds = [dancer.id];
     });
     elements.newDancerNameInput.value = "";
     state.markerElements.get(dancer.id)?.focus();
@@ -395,8 +435,12 @@
       state.dancers = state.dancers.filter((item) => item.id !== dancerId);
       state.markerElements.get(dancerId)?.remove();
       state.markerElements.delete(dancerId);
-      if (state.selectedDancerId === dancerId) {
-        state.selectedDancerId = state.dancers[Math.min(removedIndex, state.dancers.length - 1)]?.id || null;
+      state.selectedDancerIds = state.selectedDancerIds.filter((selectedId) => selectedId !== dancerId);
+      if (state.selectedDancerId === dancerId) state.selectedDancerId = state.selectedDancerIds.at(-1) || null;
+      if (state.selectedDancerIds.length === 0) {
+        const fallback = state.dancers[Math.min(removedIndex, state.dancers.length - 1)]?.id || null;
+        state.selectedDancerId = fallback;
+        state.selectedDancerIds = fallback ? [fallback] : [];
       }
     });
     if (state.selectedDancerId) state.markerElements.get(state.selectedDancerId)?.focus();
@@ -411,10 +455,17 @@
 
   function selectDancer(dancerId, options = {}) {
     if (!state.dancers.some((dancer) => dancer.id === dancerId)) return;
-    state.selectedDancerId = dancerId;
-    renderSelection();
-    renderDancerList();
-    renderMarkerPositions();
+    let nextIds;
+    if (options.toggle) {
+      nextIds = state.selectedDancerIds.includes(dancerId)
+        ? state.selectedDancerIds.filter((selectedId) => selectedId !== dancerId)
+        : [...state.selectedDancerIds, dancerId];
+    } else if (options.additive) {
+      nextIds = [...state.selectedDancerIds, dancerId];
+    } else {
+      nextIds = [dancerId];
+    }
+    setSelectedDancerIds(nextIds, { primaryDancerId: dancerId });
     if (options.restoreListFocus) findDancerListButton(dancerId)?.focus();
   }
 
@@ -430,7 +481,6 @@
     marker.setAttribute("aria-label", `${dancer.name}. Drag to set position at the current time.`);
 
     marker.addEventListener("pointerdown", startMarkerDrag);
-    marker.addEventListener("click", () => selectDancer(dancer.id));
     marker.addEventListener("keydown", handleMarkerKeydown);
 
     elements.markerLayer.append(marker);
@@ -439,6 +489,7 @@
   }
 
   function renderMarkerPositions() {
+    const selectedIds = new Set(state.selectedDancerIds);
     const activeIds = new Set(state.dancers.map((dancer) => dancer.id));
     for (const [id, marker] of state.markerElements.entries()) {
       if (!activeIds.has(id)) {
@@ -454,20 +505,21 @@
       const displayedPosition = stageToDisplayPosition(position, state.stageOrientation);
       marker.style.left = `${displayedPosition.x}%`;
       marker.style.top = `${displayedPosition.y}%`;
-      marker.classList.toggle("is-selected", dancer.id === state.selectedDancerId);
-      marker.setAttribute("aria-pressed", String(dancer.id === state.selectedDancerId));
+      marker.classList.toggle("is-selected", selectedIds.has(dancer.id));
+      marker.classList.toggle("is-primary", dancer.id === state.selectedDancerId);
+      marker.setAttribute("aria-pressed", String(selectedIds.has(dancer.id)));
       marker.setAttribute("aria-label", `${dancer.name} at ${Math.round(displayedPosition.x)} percent across and ${Math.round(displayedPosition.y)} percent down.`);
     });
 
     elements.emptyStage.classList.toggle("is-hidden", state.dancers.length > 0);
   }
 
-  function positionFromPointer(event) {
+  function displayPositionFromPointer(event, options = {}) {
     const rect = elements.stage.getBoundingClientRect();
-    return displayToStagePosition({
-      x: clamp(((event.clientX - rect.left) / rect.width) * 100, 2.5, 97.5),
-      y: clamp(((event.clientY - rect.top) / rect.height) * 100, 4, 96),
-    }, state.stageOrientation);
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    if (options.clampToStage === false) return { x, y };
+    return { x: clamp(x, 2.5, 97.5), y: clamp(y, 4, 96) };
   }
 
   function setStageOrientation(orientation) {
@@ -588,43 +640,155 @@
     if (stageTouchPointers.size < 2) stagePinchGesture = null;
   }
 
-  function startMarkerDrag(event) {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    const marker = event.currentTarget;
-    const dancerId = marker.dataset.dancerId;
-    pausePlayback();
-    selectDancer(dancerId);
-    marker.classList.add("is-dragging");
-    marker.setPointerCapture(event.pointerId);
+  function toggleMultiSelectMode() {
+    state.multiSelectMode = !state.multiSelectMode;
+    renderSelectionControls();
+    showToast(state.multiSelectMode ? "Multi-select on. Tap dancers to add or remove them." : "Multi-select off.");
+  }
 
+  function startSelectionMarquee(event) {
+    if (event.button !== 0 || event.pointerType === "touch" || event.target.closest(".dancer-marker")) return;
+    event.preventDefault();
     const pointerStart = { x: event.clientX, y: event.clientY };
+    const start = displayPositionFromPointer(event, { clampToStage: false });
+    const addsToSelection = event.shiftKey || event.ctrlKey || event.metaKey;
     let didMove = false;
-    let latestPosition = getPositionAtTime(getSelectedDancer().keyframes, state.currentTime);
+    let latest = start;
+    elements.stage.setPointerCapture(event.pointerId);
+
+    function renderMarquee() {
+      const left = clamp(Math.min(start.x, latest.x), 0, 100);
+      const top = clamp(Math.min(start.y, latest.y), 0, 100);
+      const right = clamp(Math.max(start.x, latest.x), 0, 100);
+      const bottom = clamp(Math.max(start.y, latest.y), 0, 100);
+      elements.selectionMarquee.style.left = `${left}%`;
+      elements.selectionMarquee.style.top = `${top}%`;
+      elements.selectionMarquee.style.width = `${right - left}%`;
+      elements.selectionMarquee.style.height = `${bottom - top}%`;
+      elements.selectionMarquee.classList.remove("is-hidden");
+    }
 
     function move(moveEvent) {
       if (!didMove) {
         didMove = hasPointerMoved(pointerStart, { x: moveEvent.clientX, y: moveEvent.clientY });
         if (!didMove) return;
       }
-      latestPosition = positionFromPointer(moveEvent);
-      const displayedPosition = stageToDisplayPosition(latestPosition, state.stageOrientation);
-      marker.style.left = `${displayedPosition.x}%`;
-      marker.style.top = `${displayedPosition.y}%`;
+      latest = displayPositionFromPointer(moveEvent, { clampToStage: false });
+      renderMarquee();
+    }
+
+    function cleanup(finishEvent) {
+      elements.selectionMarquee.classList.add("is-hidden");
+      elements.stage.removeEventListener("pointermove", move);
+      elements.stage.removeEventListener("pointerup", finish);
+      elements.stage.removeEventListener("pointercancel", cancel);
+      if (elements.stage.hasPointerCapture(finishEvent.pointerId)) elements.stage.releasePointerCapture(finishEvent.pointerId);
     }
 
     function finish(finishEvent) {
-      marker.classList.remove("is-dragging");
+      cleanup(finishEvent);
+      if (!didMove) {
+        if (!addsToSelection) setSelectedDancerIds([]);
+        return;
+      }
+      const left = Math.min(start.x, latest.x);
+      const right = Math.max(start.x, latest.x);
+      const top = Math.min(start.y, latest.y);
+      const bottom = Math.max(start.y, latest.y);
+      const enclosedIds = state.dancers
+        .filter((dancer) => {
+          const position = stageToDisplayPosition(getPositionAtTime(dancer.keyframes, state.currentTime), state.stageOrientation);
+          return position.x >= left && position.x <= right && position.y >= top && position.y <= bottom;
+        })
+        .map((dancer) => dancer.id);
+      const nextIds = addsToSelection ? [...state.selectedDancerIds, ...enclosedIds] : enclosedIds;
+      setSelectedDancerIds(nextIds, { primaryDancerId: enclosedIds.at(-1) });
+    }
+
+    function cancel(cancelEvent) {
+      cleanup(cancelEvent);
+    }
+
+    elements.stage.addEventListener("pointermove", move);
+    elements.stage.addEventListener("pointerup", finish);
+    elements.stage.addEventListener("pointercancel", cancel);
+  }
+
+  function startMarkerDrag(event) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const marker = event.currentTarget;
+    const dancerId = marker.dataset.dancerId;
+    const usesSelectionModifier = event.shiftKey || event.ctrlKey || event.metaKey;
+    const wasSelected = state.selectedDancerIds.includes(dancerId);
+
+    if (usesSelectionModifier || (state.multiSelectMode && !wasSelected)) {
+      selectDancer(dancerId, { toggle: true });
+      return;
+    }
+
+    pausePlayback();
+    if (!wasSelected) selectDancer(dancerId);
+    const selectedDancers = getSelectedDancers();
+    const startingDisplayPositions = selectedDancers.map((dancer) => {
+      const position = getPositionAtTime(dancer.keyframes, state.currentTime);
+      return { dancerId: dancer.id, ...stageToDisplayPosition(position, state.stageOrientation) };
+    });
+    const draggedMarkers = selectedDancers
+      .map((dancer) => state.markerElements.get(dancer.id))
+      .filter(Boolean);
+    draggedMarkers.forEach((selectedMarker) => selectedMarker.classList.add("is-dragging"));
+    marker.setPointerCapture(event.pointerId);
+
+    const pointerStart = { x: event.clientX, y: event.clientY };
+    const pointerStartPosition = displayPositionFromPointer(event);
+    let didMove = false;
+    let latestDisplayPositions = startingDisplayPositions.map((position) => ({ ...position }));
+
+    function move(moveEvent) {
+      if (!didMove) {
+        didMove = hasPointerMoved(pointerStart, { x: moveEvent.clientX, y: moveEvent.clientY });
+        if (!didMove) return;
+      }
+      const pointerPosition = displayPositionFromPointer(moveEvent);
+      const movedPositions = applyGroupDelta(startingDisplayPositions, {
+        x: pointerPosition.x - pointerStartPosition.x,
+        y: pointerPosition.y - pointerStartPosition.y,
+      });
+      latestDisplayPositions = startingDisplayPositions.map((position, index) => ({
+        dancerId: position.dancerId,
+        ...movedPositions[index],
+      }));
+      latestDisplayPositions.forEach((position) => {
+        const selectedMarker = state.markerElements.get(position.dancerId);
+        if (!selectedMarker) return;
+        selectedMarker.style.left = `${position.x}%`;
+        selectedMarker.style.top = `${position.y}%`;
+      });
+    }
+
+    function finish(finishEvent) {
+      draggedMarkers.forEach((selectedMarker) => selectedMarker.classList.remove("is-dragging"));
       marker.removeEventListener("pointermove", move);
       marker.removeEventListener("pointerup", finish);
       marker.removeEventListener("pointercancel", cancel);
       if (marker.hasPointerCapture(finishEvent.pointerId)) marker.releasePointerCapture(finishEvent.pointerId);
-      if (didMove) recordPosition(dancerId, latestPosition);
-      else renderMarkerPositions();
+      if (didMove) {
+        recordGroupPositions(latestDisplayPositions.map((position) => ({
+          dancerId: position.dancerId,
+          ...displayToStagePosition(position, state.stageOrientation),
+        })));
+      } else if (state.multiSelectMode) {
+        selectDancer(dancerId, { toggle: true });
+      } else if (state.selectedDancerIds.length > 1) {
+        selectDancer(dancerId);
+      } else {
+        renderMarkerPositions();
+      }
     }
 
     function cancel(cancelEvent) {
-      marker.classList.remove("is-dragging");
+      draggedMarkers.forEach((selectedMarker) => selectedMarker.classList.remove("is-dragging"));
       marker.removeEventListener("pointermove", move);
       marker.removeEventListener("pointerup", finish);
       marker.removeEventListener("pointercancel", cancel);
@@ -655,29 +819,48 @@
 
     event.preventDefault();
     pausePlayback();
-    selectDancer(dancerId);
-    const dancer = getSelectedDancer();
-    const currentPosition = getPositionAtTime(dancer.keyframes, state.currentTime);
-    const displayedCurrentPosition = stageToDisplayPosition(currentPosition, state.stageOrientation);
-    const displayedPosition = stageToDisplayPosition(currentPosition, state.stageOrientation);
+    if (!state.selectedDancerIds.includes(dancerId)) selectDancer(dancerId);
+    const selectedDancers = getSelectedDancers();
+    const displayedPositions = selectedDancers.map((dancer) => ({
+      dancerId: dancer.id,
+      ...stageToDisplayPosition(getPositionAtTime(dancer.keyframes, state.currentTime), state.stageOrientation),
+    }));
     const step = event.shiftKey ? 5 : 1;
-    recordPosition(dancerId, displayToStagePosition({
-      x: clamp(displayedPosition.x + direction[0] * step, 2.5, 97.5),
-      y: clamp(displayedPosition.y + direction[1] * step, 4, 96),
-    }, state.stageOrientation));
+    const movedPositions = applyGroupDelta(displayedPositions, {
+      x: direction[0] * step,
+      y: direction[1] * step,
+    });
+    recordGroupPositions(displayedPositions.map((position, index) => ({
+      dancerId: position.dancerId,
+      ...displayToStagePosition(movedPositions[index], state.stageOrientation),
+    })));
+  }
+
+  function recordGroupPositions(positionEntries) {
+    const entries = Array.isArray(positionEntries) ? positionEntries : [];
+    const entryMap = new Map(entries.map((entry) => [entry.dancerId, entry]));
+    const affectedDancers = state.dancers.filter((dancer) => entryMap.has(dancer.id));
+    if (affectedDancers.length === 0) return false;
+    const label = affectedDancers.length === 1 ? `move ${affectedDancers[0].name}` : `move ${affectedDancers.length} dancers`;
+    const changed = commitDocumentEdit(label, () => {
+      affectedDancers.forEach((dancer) => {
+        const position = entryMap.get(dancer.id);
+        dancer.keyframes = upsertKeyframe(dancer.keyframes, {
+          time: state.currentTime,
+          x: position.x,
+          y: position.y,
+        });
+      });
+    });
+    if (changed) {
+      const subject = affectedDancers.length === 1 ? affectedDancers[0].name : `${affectedDancers.length} dancers`;
+      showToast(`${subject} recorded at ${formatTime(state.currentTime)}.`);
+    }
+    return changed;
   }
 
   function recordPosition(dancerId, position) {
-    const dancer = state.dancers.find((item) => item.id === dancerId);
-    if (!dancer) return;
-    const changed = commitDocumentEdit(`move ${dancer.name}`, () => {
-      dancer.keyframes = upsertKeyframe(dancer.keyframes, {
-        time: state.currentTime,
-        x: position.x,
-        y: position.y,
-      });
-    });
-    if (changed) showToast(`Position recorded at ${formatTime(state.currentTime)}.`);
+    return recordGroupPositions([{ dancerId, ...position }]);
   }
 
   function removeKeyframe(dancerId, frameTime) {
@@ -711,6 +894,7 @@
     elements.dancerList.replaceChildren();
     elements.dancerCount.textContent = `${state.dancers.length} / ${MAX_DANCERS}`;
     elements.addDancerButton.disabled = state.dancers.length >= MAX_DANCERS;
+    const selectedIds = new Set(state.selectedDancerIds);
 
     if (state.dancers.length === 0) {
       const empty = document.createElement("p");
@@ -723,14 +907,18 @@
     state.dancers.forEach((dancer) => {
       const row = document.createElement("div");
       row.className = "dancer-row";
-      row.classList.toggle("is-selected", dancer.id === state.selectedDancerId);
+      row.classList.toggle("is-selected", selectedIds.has(dancer.id));
+      row.classList.toggle("is-primary", dancer.id === state.selectedDancerId);
 
       const selectButton = document.createElement("button");
       selectButton.type = "button";
       selectButton.className = "dancer-row-main";
       selectButton.dataset.dancerId = dancer.id;
-      selectButton.setAttribute("aria-pressed", String(dancer.id === state.selectedDancerId));
-      selectButton.addEventListener("click", () => selectDancer(dancer.id, { restoreListFocus: true }));
+      selectButton.setAttribute("aria-pressed", String(selectedIds.has(dancer.id)));
+      selectButton.addEventListener("click", (event) => selectDancer(dancer.id, {
+        restoreListFocus: true,
+        toggle: state.multiSelectMode || event.shiftKey || event.ctrlKey || event.metaKey,
+      }));
 
       const swatch = document.createElement("span");
       swatch.className = "dancer-swatch";
@@ -769,13 +957,30 @@
     });
   }
 
+  function renderSelectionControls() {
+    const count = state.selectedDancerIds.length;
+    elements.selectionCount.textContent = `${count} selected`;
+    elements.multiSelectButton.setAttribute("aria-pressed", String(state.multiSelectMode));
+    elements.multiSelectButton.classList.toggle("is-active", state.multiSelectMode);
+    elements.selectAllButton.disabled = state.dancers.length === 0 || count === state.dancers.length;
+    elements.clearSelectionButton.disabled = count === 0;
+  }
+
   function renderSelection() {
     const dancer = getSelectedDancer();
+    const selectedDancers = getSelectedDancers();
     elements.keyframeList.replaceChildren();
     elements.keyframeTrack.replaceChildren();
 
     if (!dancer) {
       elements.selectionText.textContent = "No dancer selected";
+      elements.coordinateEditor.classList.add("is-hidden");
+      elements.dancerNameEditor.classList.add("is-hidden");
+      return;
+    }
+
+    if (selectedDancers.length > 1) {
+      elements.selectionText.textContent = `${selectedDancers.length} dancers selected · drag any selected dancer to move the group`;
       elements.coordinateEditor.classList.add("is-hidden");
       elements.dancerNameEditor.classList.add("is-hidden");
       return;
@@ -1111,6 +1316,7 @@
     replaceDocumentData(project, {
       currentTime: options.currentTime ?? 0,
       selectedDancerId: options.selectedDancerId,
+      selectedDancerIds: options.selectedDancerIds,
     });
     if (options.clearHistory) state.history = createHistory(HISTORY_LIMIT);
     renderAll();
@@ -1247,6 +1453,7 @@
     elements.durationInput.disabled = state.audioUrl !== null || state.videoUrl !== null;
     renderDancerList();
     renderSelection();
+    renderSelectionControls();
     setCurrentTime(state.currentTime, { syncMedia: false });
     elements.totalTime.textContent = formatTime(state.duration);
     updateHistoryControls();
@@ -1313,6 +1520,12 @@
     });
     elements.frontTopButton.addEventListener("click", () => setStageOrientation("front-top"));
     elements.frontBottomButton.addEventListener("click", () => setStageOrientation("front-bottom"));
+    elements.multiSelectButton.addEventListener("click", toggleMultiSelectMode);
+    elements.selectAllButton.addEventListener("click", () => {
+      const dancerIds = state.dancers.map((dancer) => dancer.id);
+      setSelectedDancerIds(dancerIds, { primaryDancerId: state.selectedDancerId || dancerIds.at(-1) });
+    });
+    elements.clearSelectionButton.addEventListener("click", () => setSelectedDancerIds([]));
     elements.zoomOutButton.addEventListener("click", () => setStageZoom(state.stageZoom - STAGE_ZOOM_STEP));
     elements.zoomResetButton.addEventListener("click", () => setStageZoom(1));
     elements.zoomInButton.addEventListener("click", () => setStageZoom(state.stageZoom + STAGE_ZOOM_STEP));
@@ -1322,6 +1535,7 @@
     elements.stageViewport.addEventListener("pointerup", finishStageTouchPointer);
     elements.stageViewport.addEventListener("pointercancel", finishStageTouchPointer);
     elements.stageViewport.addEventListener("lostpointercapture", finishStageTouchPointer);
+    elements.stage.addEventListener("pointerdown", startSelectionMarquee);
     elements.newProjectButton.addEventListener("click", startNewProject);
     elements.themeToggle.addEventListener("click", toggleTheme);
     elements.undoButton.addEventListener("click", undoDocumentEdit);

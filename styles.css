@@ -412,6 +412,46 @@ input:focus-visible,
   font-size: 0.67rem;
 }
 
+.stage-actionbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -3px 0 10px;
+}
+
+.stage-action-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--quiet-ink);
+  background: var(--field-bg);
+  font-size: 0.7rem;
+  font-weight: 760;
+}
+
+.stage-action-button:hover,
+.stage-action-button.is-active {
+  color: var(--purple);
+  border-color: var(--drop-border);
+  background: var(--purple-soft);
+}
+
+.stage-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.stage-selection-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 720;
+}
+
 .stage-help,
 .panel-copy,
 .keyboard-tip {
@@ -528,6 +568,7 @@ input:focus-visible,
 .marker-layer {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
 
 .dancer-marker {
@@ -548,6 +589,7 @@ input:focus-visible,
   transform: translate(-50%, -50%) scale(clamp(0.72, var(--stage-zoom), 1.45));
   user-select: none;
   touch-action: none;
+  pointer-events: auto;
 }
 
 .dancer-marker:hover {
@@ -558,6 +600,18 @@ input:focus-visible,
   outline: 3px solid color-mix(in srgb, var(--marker-color) 34%, transparent);
   outline-offset: 4px;
   z-index: 3;
+}
+
+.dancer-marker.is-primary {
+  outline-color: var(--purple);
+}
+
+.selection-marquee {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid var(--purple);
+  background: color-mix(in srgb, var(--purple) 16%, transparent);
+  pointer-events: none;
 }
 
 .dancer-marker.is-dragging {
@@ -1053,6 +1107,10 @@ input:focus-visible,
   background: var(--row-selected);
 }
 
+.dancer-row.is-primary {
+  box-shadow: inset 3px 0 0 var(--purple);
+}
+
 .dancer-row-main {
   min-width: 0;
   flex: 1;
@@ -1298,6 +1356,20 @@ input:focus-visible,
     gap: 7px;
   }
 
+  .stage-actionbar {
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+  }
+
+  .stage-action-button {
+    flex: 0 0 auto;
+  }
+
+  .stage-selection-count {
+    flex: 0 0 auto;
+  }
+
   .stage-legend {
     display: none;
   }
@@ -1470,7 +1542,8 @@ input:focus-visible,
   }
 
   .stage-option-button,
-  .stage-zoom-control button {
+  .stage-zoom-control button,
+  .stage-action-button {
     min-width: 44px;
     min-height: 44px;
   }

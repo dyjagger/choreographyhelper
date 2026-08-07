@@ -81,6 +81,16 @@
               </div>
             </div>
 
+            <div class="stage-actionbar" aria-label="Stage selection tools">
+              <button id="multi-select-button" class="stage-action-button" type="button" aria-pressed="false">
+                <span aria-hidden="true">◎</span>
+                Multi-select
+              </button>
+              <button id="select-all-button" class="stage-action-button" type="button">Select all</button>
+              <button id="clear-selection-button" class="stage-action-button" type="button">Clear</button>
+              <span id="selection-count" class="stage-selection-count" aria-live="polite">0 selected</span>
+            </div>
+
             <div
               id="stage-viewport"
               class="stage-viewport"
@@ -96,6 +106,7 @@
                   <strong>Your stage is empty</strong>
                   <span>Add a dancer to begin plotting formations.</span>
                 </div>
+                <div id="selection-marquee" class="selection-marquee is-hidden" aria-hidden="true"></div>
                 <div id="marker-layer" class="marker-layer"></div>
               </div>
             </div>

@@ -294,10 +294,11 @@ test("a maximum-counter project can recycle numbers and add safely to fifty danc
 
 test("document transaction equality includes selection and playhead state", () => {
   const project = { version: 1, duration: 60, dancers: [] };
-  const base = { project, currentTime: 10, selectedDancerId: null };
+  const base = { project, currentTime: 10, selectedDancerId: null, selectedDancerIds: [] };
   assert.equal(areDocumentSnapshotsEqual(base, { ...base }), true);
   assert.equal(areDocumentSnapshotsEqual(base, { ...base, currentTime: 12 }), false);
   assert.equal(areDocumentSnapshotsEqual(base, { ...base, selectedDancerId: "dancer-1" }), false);
+  assert.equal(areDocumentSnapshotsEqual(base, { ...base, selectedDancerIds: ["dancer-1", "dancer-2"] }), false);
 });
 
 test("a stale playback start cannot pause a newer active start", () => {
