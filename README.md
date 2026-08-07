@@ -19,7 +19,7 @@ No dependency installation or backend is required.
 
 ## Use it
 
-1. Add a dancer.
+1. Type an optional dancer name and add the dancer.
 2. Move the timeline to a time.
 3. Drag the dancer to the desired stage position. Dropping records a position keyframe.
 4. Move later in the timeline and drag the dancer again.
@@ -29,7 +29,15 @@ Use the **Go to** field or a recorded-position time to move the playhead to an e
 
 Use **New project** to clear the title, dancers, recorded positions, and playhead after a confirmation. The reset is undoable and keeps locally loaded music or video in place.
 
-Up to 50 dancers are supported. Audio and video files remain local to the browser and are not included in exported choreography JSON files or edit history. Choreography data is autosaved in the browser and can also be exported or imported as JSON. Importing asks for confirmation, remains undoable, and keeps loaded local media in place. Music and video have independent volume controls. The app starts in dark mode and remembers any later theme choice in that browser.
+Up to 50 dancers are supported. Dancers can be renamed when selected or with the edit control in the cast list. The front of the stage can be shown at the top or bottom without rewriting saved keyframes.
+
+Use the `−`, `100%`, and `+` controls, the mouse wheel, or a two-finger pinch to zoom the stage. Pinch movement also pans the zoomed view.
+
+Use modifier-click or a desktop selection rectangle to select several dancers. Touch devices have an explicit **Multi-select** mode. Dragging any selected dancer or pressing an arrow key moves the selected formation as one rigid group and records one undoable edit at the current playhead time.
+
+Select two or more dancers and activate **Align to path** to draw a straight line or freehand curve. Numbered ghost markers preview the result before the dancers are evenly placed along the path.
+
+Audio and video remain local to the device. **Export JSON** creates a portable choreography-only plan. **Export complete** creates a validated `.formation` package containing the choreography, volume settings, audio, and video. Complete web packages are bounded to 1 GB. Import accepts both formats; JSON import keeps currently loaded media, while complete-project import replaces it with the packaged media. Music and video have independent volume controls. The app starts in dark mode and remembers any later theme choice in that browser.
 
 The interface adapts automatically to narrow screens and touch input. Mobile layouts use larger touch targets, reorganized transport controls, a cast-first side panel, and stage scrolling that remains available outside draggable dancer markers.
 
@@ -40,3 +48,22 @@ On touch phones in landscape orientation, the stage and transport occupy the lef
 ```bash
 npm test
 ```
+
+## Windows desktop edition
+
+The Windows edition uses the same local-first editor and `.formation` files as the web edition. Its Electron renderer is sandboxed, has no Node access, uses context isolation, denies permission requests and navigation, and loads only the allowlisted local application files.
+
+Run the desktop edition during development:
+
+```bash
+npm ci
+npm run desktop:start
+```
+
+Create a hardened package for the current operating system:
+
+```bash
+npm run desktop:package
+```
+
+The **Build Windows desktop app** GitHub Actions workflow packages Windows x64, verifies dependencies and tests, creates a portable ZIP, and builds a per-user Inno Setup installer. The installer associates `.formation` files with Formation Studio. Test installers are unsigned; a public release should be code-signed with publisher-owned credentials that are never committed to this repository.

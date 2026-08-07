@@ -4,6 +4,11 @@ This roadmap records the approved upgrade sequence for the web editor and the
 future Windows desktop application. Work is developed away from `main` and is
 merged only after the milestone's acceptance checks pass.
 
+Implementation status: milestones 0–5 and the Windows application/build work
+are complete on the `roadmap/choreo-v2` branch. A clean-machine Windows
+installer check, public code signing, and advanced Formation Path controls
+remain release follow-ups.
+
 ## Product rules
 
 - Existing version-one JSON plans must remain importable.
@@ -17,6 +22,8 @@ merged only after the milestone's acceptance checks pass.
 - The web and Windows editions share the same editor and project format.
 
 ## Milestone 0: Coordinate and interaction foundation
+
+Status: complete.
 
 - Add pure conversions between stored stage coordinates and displayed
   coordinates.
@@ -32,6 +39,8 @@ Acceptance:
 - Existing version-one projects and all existing tests continue to pass.
 
 ## Milestone 1: Dancer naming and stage orientation
+
+Status: complete.
 
 - Make naming available during dancer creation.
 - Add a visible rename action in the dancer list while retaining the selected
@@ -49,6 +58,8 @@ Acceptance:
 
 ## Milestone 2: Stage zoom and pan
 
+Status: complete.
+
 - Add zoom out, zoom percentage/reset, and zoom in controls.
 - Zoom with a mouse wheel around the pointer location.
 - Pinch around the gesture midpoint on touch devices.
@@ -62,6 +73,8 @@ Acceptance:
 - Zoom remains usable in phone portrait and landscape layouts.
 
 ## Milestone 3: Multi-dancer selection and group movement
+
+Status: complete.
 
 - Replace scalar selection with an ordered selection collection and a primary
   dancer.
@@ -78,6 +91,9 @@ Acceptance:
 
 ## Milestone 4: Formation Path alignment
 
+Status: core line/freehand tool complete; circle, arc, fixed spacing, reverse
+order, and nearby-dancer capture remain follow-ups.
+
 - Add a Formation Path tool for selected dancers.
 - Draw straight or smoothed freehand paths with a live ghost preview.
 - Evenly distribute selected dancers while minimizing crossovers.
@@ -91,6 +107,8 @@ Acceptance:
 - Short or invalid paths cannot silently stack dancers.
 
 ## Milestone 5: Complete project packages
+
+Status: complete for bounded web packages up to 1 GB.
 
 - Keep portable JSON export/import.
 - Add a `.formation` ZIP package containing a manifest, choreography JSON, and
@@ -107,9 +125,13 @@ Acceptance:
 
 ## Milestone 6: Windows desktop application
 
+Status: application and unsigned installer workflow complete. Clean-machine
+Windows installation still needs release validation, and public distribution
+requires publisher-owned code-signing credentials.
+
 - Wrap the shared editor in a sandboxed Electron shell.
-- Add native New/Open/Save/Save As, recent projects, drag-and-drop opening, and
-  `.formation` file association.
+- Add native New/Open/Export commands, formation undo/redo, drag-and-drop
+  opening, and `.formation` file association.
 - Build a Windows installer in a Windows GitHub Actions job.
 - Validate offline use and clean Windows installation.
 - Keep signing credentials outside the repository; add public code signing
@@ -122,3 +144,8 @@ Acceptance:
   and cannot navigate to arbitrary content.
 - The unsigned test installer and signed public-release path are documented.
 
+Release validation on a Windows machine:
+
+- Install and uninstall on a clean user account.
+- Confirm `.formation` file association and double-click opening.
+- Confirm media playback and complete-project round trips in the installed app.

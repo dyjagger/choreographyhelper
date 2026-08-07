@@ -1141,6 +1141,7 @@
     }
 
     const currentPosition = getPositionAtTime(dancer.keyframes, state.currentTime);
+    const displayedCurrentPosition = stageToDisplayPosition(currentPosition, state.stageOrientation);
     elements.selectionText.textContent = `${dancer.name} · ${dancer.keyframes.length} recorded position${dancer.keyframes.length === 1 ? "" : "s"}`;
     elements.coordinateEditor.classList.remove("is-hidden");
     elements.dancerNameEditor.classList.remove("is-hidden");
@@ -1680,6 +1681,40 @@
     }
   }
 
+  async function importDesktopProject(descriptor) {
+    if (!descriptor?.url || !descriptor?.name) return;
+    try {
+      const response = await fetch(descriptor.url, { cache: "no-store" });
+      if (!response.ok) throw new Error("Desktop project could not be opened");
+      const blob = await response.blob();
+      await importProject(new File([blob], descriptor.name, {
+        type: descriptor.type || blob.type || "application/octet-stream",
+        lastModified: Date.now(),
+      }));
+    } catch (error) {
+      showToast("The selected desktop project could not be opened.");
+    }
+  }
+
+  async function handleDesktopCommand(command) {
+    if (command === "new") elements.newProjectButton.click();
+    else if (command === "undo") elements.undoButton.click();
+    else if (command === "redo") elements.redoButton.click();
+    else if (command === "export-json") elements.exportButton.click();
+    else if (command === "export-complete") elements.exportPackageButton.click();
+    else if (command === "open") {
+      const descriptor = await window.FormationDesktop?.chooseProject();
+      if (descriptor) await importDesktopProject(descriptor);
+    }
+  }
+
+  function bindDesktopBridge() {
+    if (!window.FormationDesktop) return;
+    document.documentElement.classList.add("is-desktop-app");
+    window.FormationDesktop.onCommand(handleDesktopCommand);
+    window.FormationDesktop.onOpenProject(importDesktopProject);
+  }
+
   function setSaveStatus(message, isError = false) {
     elements.saveStatus.textContent = message;
     elements.saveStatus.classList.toggle("is-error", isError);
@@ -1946,6 +1981,15 @@
     elements.exportPackageButton.addEventListener("click", exportCompleteProject);
     elements.importButton.addEventListener("click", () => elements.importInput.click());
     elements.importInput.addEventListener("change", (event) => importProject(event.target.files[0]));
+    window.addEventListener("dragover", (event) => {
+      if (Array.from(event.dataTransfer?.items || []).some((item) => item.kind === "file")) event.preventDefault();
+    });
+    window.addEventListener("drop", (event) => {
+      const file = event.dataTransfer?.files?.[0];
+      if (!file || !/\.(formation|json)$/i.test(file.name)) return;
+      event.preventDefault();
+      importProject(file);
+    });
     elements.replaceLocalSaveButton.addEventListener("click", () => {
       const shouldReplace = window.confirm("Replace the unreadable stored plan with the choreography currently on screen?");
       if (!shouldReplace) return;
@@ -2000,6 +2044,7 @@
     elements.audioPlayer.volume = Number(elements.volumeInput.value);
     elements.videoPlayer.volume = Number(elements.videoVolumeInput.value);
     bindEvents();
+    bindDesktopBridge();
     stageResizeObserver = new ResizeObserver(relayoutStageSurface);
     stageResizeObserver.observe(elements.stageViewport);
     requestAnimationFrame(layoutStageSurface);

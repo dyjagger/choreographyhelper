@@ -1,0 +1,62 @@
+name: Build Windows desktop app
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit build dependencies
+        run: npm audit --audit-level=high
+
+      - name: Run tests
+        run: npm test
+
+      - name: Package hardened Windows application
+        run: npm run desktop:package
+        env:
+          ELECTRON_PLATFORM: win32
+          ELECTRON_ARCH: x64
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build per-user Windows installer
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' "/DMyAppVersion=$version" 'desktop\installer.iss'
+
+      - name: Build portable archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path 'out\portable' | Out-Null
+          Compress-Archive -Path 'out\Formation Studio-win32-x64\*' -DestinationPath 'out\portable\Formation-Studio-Windows-x64.zip' -Force
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Formation-Studio-Windows-x64
+          if-no-files-found: error
+          path: |
+            out/installer/*.exe
+            out/portable/*.zip
