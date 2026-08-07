@@ -67,6 +67,13 @@
                   <button id="front-top-button" class="stage-option-button" type="button" aria-pressed="false">Top</button>
                   <button id="front-bottom-button" class="stage-option-button" type="button" aria-pressed="true">Bottom</button>
                 </div>
+                <div class="stage-zoom-control" role="group" aria-label="Stage zoom">
+                  <button id="zoom-out-button" type="button" aria-label="Zoom out">−</button>
+                  <button id="zoom-reset-button" type="button" aria-label="Reset stage zoom to 100 percent">
+                    <span id="zoom-level">100%</span>
+                  </button>
+                  <button id="zoom-in-button" type="button" aria-label="Zoom in">＋</button>
+                </div>
                 <div class="stage-legend" aria-hidden="true">
                   <span></span>
                   <span id="audience-position-label">Audience below</span>
@@ -75,20 +82,22 @@
             </div>
 
             <div
-              id="stage"
-              class="stage"
+              id="stage-viewport"
+              class="stage-viewport"
               role="region"
               aria-label="Choreography stage"
               aria-describedby="stage-instructions"
             >
-              <div class="stage-grid" aria-hidden="true"></div>
-              <div class="stage-centre-line" aria-hidden="true"></div>
-              <div class="stage-front" aria-hidden="true">FRONT OF STAGE</div>
-              <div id="empty-stage" class="empty-stage">
-                <strong>Your stage is empty</strong>
-                <span>Add a dancer to begin plotting formations.</span>
+              <div id="stage" class="stage">
+                <div class="stage-grid" aria-hidden="true"></div>
+                <div class="stage-centre-line" aria-hidden="true"></div>
+                <div class="stage-front" aria-hidden="true">FRONT OF STAGE</div>
+                <div id="empty-stage" class="empty-stage">
+                  <strong>Your stage is empty</strong>
+                  <span>Add a dancer to begin plotting formations.</span>
+                </div>
+                <div id="marker-layer" class="marker-layer"></div>
               </div>
-              <div id="marker-layer" class="marker-layer"></div>
             </div>
           </div>
 

@@ -30,6 +30,9 @@
   const MAX_DANCERS = 50;
   const HISTORY_LIMIT = 50;
   const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+  const MIN_STAGE_ZOOM = 0.5;
+  const MAX_STAGE_ZOOM = 3;
+  const STAGE_ZOOM_STEP = 0.25;
   const STORAGE_KEY = "formation-studio-project-v1";
   const THEME_STORAGE_KEY = "formation-studio-theme";
   const PALETTE = [
@@ -83,6 +86,7 @@
     saveStatus: document.querySelector("#save-status"),
     selectionText: document.querySelector("#selection-text"),
     stage: document.querySelector("#stage"),
+    stageViewport: document.querySelector("#stage-viewport"),
     audiencePositionLabel: document.querySelector("#audience-position-label"),
     timeline: document.querySelector("#timeline"),
     themeToggle: document.querySelector("#theme-toggle"),
@@ -104,6 +108,10 @@
     volumeInput: document.querySelector("#volume-input"),
     xInput: document.querySelector("#x-input"),
     yInput: document.querySelector("#y-input"),
+    zoomInButton: document.querySelector("#zoom-in-button"),
+    zoomLevel: document.querySelector("#zoom-level"),
+    zoomOutButton: document.querySelector("#zoom-out-button"),
+    zoomResetButton: document.querySelector("#zoom-reset-button"),
   };
 
   const state = {
@@ -123,6 +131,7 @@
     rafId: null,
     selectedDancerId: null,
     stageOrientation: "front-bottom",
+    stageZoom: 1,
     storageWriteBlocked: false,
     audioUrl: null,
     videoUrl: null,
@@ -131,6 +140,9 @@
   let saveTimer = null;
   let toastTimer = null;
   let projectTitleEditSnapshot = null;
+  const stageTouchPointers = new Map();
+  let stagePinchGesture = null;
+  let stageResizeObserver = null;
 
   function applyTheme(theme, persist = false) {
     const nextTheme = theme === "dark" ? "dark" : "light";
@@ -465,6 +477,115 @@
       state.stageOrientation = nextOrientation;
     });
     showToast(nextOrientation === "front-top" ? "Front of stage moved to the top." : "Front of stage moved to the bottom.");
+  }
+
+  function getStageViewportCentre() {
+    const rect = elements.stageViewport.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+
+  function getNormalizedStagePoint(clientPoint) {
+    const rect = elements.stage.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return { x: 0.5, y: 0.5 };
+    return {
+      x: clamp((clientPoint.x - rect.left) / rect.width, 0, 1),
+      y: clamp((clientPoint.y - rect.top) / rect.height, 0, 1),
+    };
+  }
+
+  function layoutStageSurface() {
+    const viewportRect = elements.stageViewport.getBoundingClientRect();
+    if (viewportRect.width <= 0 || viewportRect.height <= 0) return;
+    const width = viewportRect.width * state.stageZoom;
+    const height = viewportRect.height * state.stageZoom;
+    elements.stage.style.width = `${width}px`;
+    elements.stage.style.height = `${height}px`;
+    elements.stage.style.left = `${Math.max(0, (viewportRect.width - width) / 2)}px`;
+    elements.stage.style.top = `${Math.max(0, (viewportRect.height - height) / 2)}px`;
+    elements.stage.style.setProperty("--stage-zoom", state.stageZoom);
+    elements.zoomLevel.textContent = `${Math.round(state.stageZoom * 100)}%`;
+    elements.zoomOutButton.disabled = state.stageZoom <= MIN_STAGE_ZOOM;
+    elements.zoomInButton.disabled = state.stageZoom >= MAX_STAGE_ZOOM;
+  }
+
+  function positionNormalizedStagePoint(normalizedPoint, clientPoint) {
+    const stageRect = elements.stage.getBoundingClientRect();
+    const desiredClientX = stageRect.left + normalizedPoint.x * stageRect.width;
+    const desiredClientY = stageRect.top + normalizedPoint.y * stageRect.height;
+    elements.stageViewport.scrollLeft += desiredClientX - clientPoint.x;
+    elements.stageViewport.scrollTop += desiredClientY - clientPoint.y;
+  }
+
+  function setStageZoom(nextZoom, options = {}) {
+    const zoom = Math.round(clamp(nextZoom, MIN_STAGE_ZOOM, MAX_STAGE_ZOOM) * 100) / 100;
+    const anchor = options.anchor || getStageViewportCentre();
+    const normalizedPoint = options.normalizedPoint || getNormalizedStagePoint(anchor);
+    state.stageZoom = zoom;
+    layoutStageSurface();
+    positionNormalizedStagePoint(normalizedPoint, anchor);
+  }
+
+  function relayoutStageSurface() {
+    const anchor = getStageViewportCentre();
+    const normalizedPoint = getNormalizedStagePoint(anchor);
+    layoutStageSurface();
+    positionNormalizedStagePoint(normalizedPoint, anchor);
+  }
+
+  function handleStageWheel(event) {
+    event.preventDefault();
+    const factor = Math.exp(-event.deltaY * 0.0015);
+    setStageZoom(state.stageZoom * factor, { anchor: { x: event.clientX, y: event.clientY } });
+  }
+
+  function getTouchPair() {
+    return [...stageTouchPointers.values()].slice(0, 2);
+  }
+
+  function getTouchPairGeometry() {
+    const [first, second] = getTouchPair();
+    if (!first || !second) return null;
+    return {
+      distance: Math.hypot(second.x - first.x, second.y - first.y),
+      midpoint: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+    };
+  }
+
+  function handleStageTouchPointerDown(event) {
+    if (event.pointerType !== "touch" || event.target.closest(".dancer-marker")) return;
+    stageTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    elements.stageViewport.setPointerCapture(event.pointerId);
+    if (stageTouchPointers.size !== 2) return;
+    const geometry = getTouchPairGeometry();
+    if (!geometry || geometry.distance <= 0) return;
+    pausePlayback();
+    stagePinchGesture = {
+      distance: geometry.distance,
+      zoom: state.stageZoom,
+      normalizedPoint: getNormalizedStagePoint(geometry.midpoint),
+    };
+  }
+
+  function handleStageTouchPointerMove(event) {
+    if (!stageTouchPointers.has(event.pointerId)) return;
+    stageTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (!stagePinchGesture || stageTouchPointers.size < 2) return;
+    event.preventDefault();
+    const geometry = getTouchPairGeometry();
+    if (!geometry || geometry.distance <= 0) return;
+    setStageZoom(stagePinchGesture.zoom * (geometry.distance / stagePinchGesture.distance), {
+      anchor: geometry.midpoint,
+      normalizedPoint: stagePinchGesture.normalizedPoint,
+    });
+  }
+
+  function finishStageTouchPointer(event) {
+    if (!stageTouchPointers.has(event.pointerId)) return;
+    stageTouchPointers.delete(event.pointerId);
+    if (elements.stageViewport.hasPointerCapture(event.pointerId)) {
+      elements.stageViewport.releasePointerCapture(event.pointerId);
+    }
+    if (stageTouchPointers.size < 2) stagePinchGesture = null;
   }
 
   function startMarkerDrag(event) {
@@ -1192,6 +1313,15 @@
     });
     elements.frontTopButton.addEventListener("click", () => setStageOrientation("front-top"));
     elements.frontBottomButton.addEventListener("click", () => setStageOrientation("front-bottom"));
+    elements.zoomOutButton.addEventListener("click", () => setStageZoom(state.stageZoom - STAGE_ZOOM_STEP));
+    elements.zoomResetButton.addEventListener("click", () => setStageZoom(1));
+    elements.zoomInButton.addEventListener("click", () => setStageZoom(state.stageZoom + STAGE_ZOOM_STEP));
+    elements.stageViewport.addEventListener("wheel", handleStageWheel, { passive: false });
+    elements.stageViewport.addEventListener("pointerdown", handleStageTouchPointerDown);
+    elements.stageViewport.addEventListener("pointermove", handleStageTouchPointerMove);
+    elements.stageViewport.addEventListener("pointerup", finishStageTouchPointer);
+    elements.stageViewport.addEventListener("pointercancel", finishStageTouchPointer);
+    elements.stageViewport.addEventListener("lostpointercapture", finishStageTouchPointer);
     elements.newProjectButton.addEventListener("click", startNewProject);
     elements.themeToggle.addEventListener("click", toggleTheme);
     elements.undoButton.addEventListener("click", undoDocumentEdit);
@@ -1329,6 +1459,9 @@
     elements.audioPlayer.volume = Number(elements.volumeInput.value);
     elements.videoPlayer.volume = Number(elements.videoVolumeInput.value);
     bindEvents();
+    stageResizeObserver = new ResizeObserver(relayoutStageSurface);
+    stageResizeObserver.observe(elements.stageViewport);
+    requestAnimationFrame(layoutStageSurface);
     const restoreResult = restoreLocalProject();
     if (restoreResult !== "restored") {
       updateDuration(state.duration, { save: false });
