@@ -93,6 +93,91 @@
     return { segments, totalLength };
   }
 
+  function getPolylineLength(points) {
+    return getPolylineSegments(points).totalLength;
+  }
+
+  function distanceFromPointToSegment(point, start, end) {
+    const segmentX = end.x - start.x;
+    const segmentY = end.y - start.y;
+    const lengthSquared = segmentX * segmentX + segmentY * segmentY;
+    if (lengthSquared <= POSITION_EPSILON) return Math.hypot(point.x - start.x, point.y - start.y);
+    const progress = clamp(
+      ((point.x - start.x) * segmentX + (point.y - start.y) * segmentY) / lengthSquared,
+      0,
+      1,
+    );
+    return Math.hypot(point.x - (start.x + segmentX * progress), point.y - (start.y + segmentY * progress));
+  }
+
+  function prepareFormationPath(points, options = {}) {
+    const safePoints = (Array.isArray(points) ? points : [])
+      .filter((point) => Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y)))
+      .map((point) => ({ x: roundCoordinate(point.x), y: roundCoordinate(point.y) }));
+    if (safePoints.length < 2 || getPolylineLength(safePoints) <= POSITION_EPSILON) return [];
+
+    const straightThreshold = Math.max(0, Number(options.straightThreshold) || 2);
+    const start = safePoints[0];
+    const end = safePoints[safePoints.length - 1];
+    const maximumDeviation = Math.max(...safePoints.map((point) => distanceFromPointToSegment(point, start, end)));
+    if (maximumDeviation <= straightThreshold) return [start, end];
+
+    const passes = clamp(Math.floor(Number(options.smoothingPasses) || 2), 0, 3);
+    let smoothed = safePoints;
+    for (let pass = 0; pass < passes; pass += 1) {
+      const next = [smoothed[0]];
+      for (let index = 1; index < smoothed.length; index += 1) {
+        const left = smoothed[index - 1];
+        const right = smoothed[index];
+        next.push(
+          {
+            x: roundCoordinate(left.x * 0.75 + right.x * 0.25),
+            y: roundCoordinate(left.y * 0.75 + right.y * 0.25),
+          },
+          {
+            x: roundCoordinate(left.x * 0.25 + right.x * 0.75),
+            y: roundCoordinate(left.y * 0.25 + right.y * 0.75),
+          },
+        );
+      }
+      next.push(smoothed[smoothed.length - 1]);
+      smoothed = next;
+    }
+    return smoothed;
+  }
+
+  function projectPointOntoPolyline(point, points) {
+    const { segments, totalLength } = getPolylineSegments(points);
+    if (segments.length === 0) return { distanceAlong: 0, distance: Infinity, totalLength: 0 };
+    let best = { distanceAlong: 0, distance: Infinity, totalLength };
+    segments.forEach((segment) => {
+      const segmentX = segment.end.x - segment.start.x;
+      const segmentY = segment.end.y - segment.start.y;
+      const lengthSquared = segment.length * segment.length;
+      const progress = clamp(
+        ((point.x - segment.start.x) * segmentX + (point.y - segment.start.y) * segmentY) / lengthSquared,
+        0,
+        1,
+      );
+      const projected = {
+        x: segment.start.x + segmentX * progress,
+        y: segment.start.y + segmentY * progress,
+      };
+      const distance = Math.hypot(point.x - projected.x, point.y - projected.y);
+      if (distance < best.distance) {
+        best = { distanceAlong: segment.offset + segment.length * progress, distance, totalLength };
+      }
+    });
+    return best;
+  }
+
+  function orderPositionsAlongPath(positions, points) {
+    return (Array.isArray(positions) ? positions : [])
+      .map((position, index) => ({ index, projection: projectPointOntoPolyline(position, points) }))
+      .sort((left, right) => left.projection.distanceAlong - right.projection.distanceAlong || left.index - right.index)
+      .map((item) => item.index);
+  }
+
   function samplePolyline(points, count) {
     const sampleCount = Math.max(0, Math.floor(Number(count) || 0));
     if (sampleCount === 0) return [];
@@ -361,6 +446,7 @@
     displayToStagePosition,
     formatTime,
     getLatestKeyframeTime,
+    getPolylineLength,
     getPositionAtTime,
     getNextAvailableDancerNumber,
     hasPointerMoved,
@@ -369,6 +455,8 @@
     normalizeDancerName,
     normalizeStageOrientation,
     normalizeProjectTitle,
+    orderPositionsAlongPath,
+    prepareFormationPath,
     pushHistory,
     redoHistory,
     samplePolyline,

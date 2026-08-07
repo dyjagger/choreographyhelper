@@ -11,6 +11,7 @@
     createHistory,
     formatTime,
     getLatestKeyframeTime,
+    getPolylineLength,
     getNextAvailableDancerNumber,
     getPositionAtTime,
     hasPointerMoved,
@@ -18,8 +19,11 @@
     normalizeDancerName,
     normalizeKeyframes,
     normalizeProjectTitle,
+    orderPositionsAlongPath,
+    prepareFormationPath,
     pushHistory,
     redoHistory,
+    samplePolyline,
     shouldPauseAfterPlaybackStartSettles,
     undoHistory,
     upsertKeyframe,
@@ -70,6 +74,10 @@
     exportButton: document.querySelector("#export-button"),
     frontBottomButton: document.querySelector("#front-bottom-button"),
     frontTopButton: document.querySelector("#front-top-button"),
+    formationPathButton: document.querySelector("#formation-path-button"),
+    formationPathLine: document.querySelector("#formation-path-line"),
+    formationPathOverlay: document.querySelector("#formation-path-overlay"),
+    formationPreviewLayer: document.querySelector("#formation-preview-layer"),
     importInput: document.querySelector("#import-input"),
     importButton: document.querySelector("#import-button"),
     keyframeList: document.querySelector("#keyframe-list"),
@@ -122,6 +130,7 @@
 
   const state = {
     activeKeyframeTime: null,
+    activeStageTool: null,
     currentTime: 0,
     dancerCounter: 0,
     dancers: [],
@@ -604,7 +613,7 @@
   }
 
   function handleStageTouchPointerDown(event) {
-    if (event.pointerType !== "touch" || event.target.closest(".dancer-marker")) return;
+    if (event.pointerType !== "touch" || state.activeStageTool === "formation-path" || event.target.closest(".dancer-marker")) return;
     stageTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     elements.stageViewport.setPointerCapture(event.pointerId);
     if (stageTouchPointers.size !== 2) return;
@@ -646,8 +655,136 @@
     showToast(state.multiSelectMode ? "Multi-select on. Tap dancers to add or remove them." : "Multi-select off.");
   }
 
+  function clearFormationPathPreview() {
+    elements.formationPathLine.setAttribute("points", "");
+    elements.formationPathOverlay.classList.add("is-hidden");
+    elements.formationPreviewLayer.replaceChildren();
+  }
+
+  function setActiveStageTool(tool) {
+    const nextTool = state.activeStageTool === tool ? null : tool;
+    if (nextTool === "formation-path" && state.selectedDancerIds.length < 2) {
+      showToast("Select at least two dancers before drawing a formation path.");
+      return;
+    }
+    state.activeStageTool = nextTool;
+    if (nextTool) state.multiSelectMode = false;
+    elements.stage.dataset.tool = nextTool || "";
+    if (!nextTool) clearFormationPathPreview();
+    renderSelectionControls();
+    if (nextTool === "formation-path") showToast("Draw a line or curve on the stage to align the selected dancers.");
+  }
+
+  function createFormationPathPlan(rawPoints) {
+    const path = prepareFormationPath(rawPoints);
+    const selectedDancers = getSelectedDancers();
+    if (path.length < 2 || selectedDancers.length < 2) return null;
+    const length = getPolylineLength(path);
+    const spacing = length / (selectedDancers.length - 1);
+    const sampledPositions = samplePolyline(path, selectedDancers.length);
+    if (sampledPositions.length !== selectedDancers.length) return null;
+    const currentPositions = selectedDancers.map((dancer) => {
+      return stageToDisplayPosition(getPositionAtTime(dancer.keyframes, state.currentTime), state.stageOrientation);
+    });
+    const orderedIndices = orderPositionsAlongPath(currentPositions, path);
+    return {
+      path,
+      spacing,
+      entries: orderedIndices.map((dancerIndex, pathIndex) => ({
+        dancerId: selectedDancers[dancerIndex].id,
+        ...sampledPositions[pathIndex],
+      })),
+    };
+  }
+
+  function renderFormationPathPlan(plan) {
+    if (!plan) {
+      clearFormationPathPreview();
+      return;
+    }
+    elements.formationPathLine.setAttribute("points", plan.path.map((point) => `${point.x},${point.y}`).join(" "));
+    elements.formationPathOverlay.classList.remove("is-hidden");
+    const dancerMap = new Map(state.dancers.map((dancer) => [dancer.id, dancer]));
+    const previews = plan.entries.map((entry) => {
+      const dancer = dancerMap.get(entry.dancerId);
+      const preview = document.createElement("span");
+      preview.className = "formation-preview-marker";
+      preview.style.left = `${entry.x}%`;
+      preview.style.top = `${entry.y}%`;
+      preview.style.setProperty("--marker-color", dancer?.color || "#7156d9");
+      preview.textContent = dancer?.number || "";
+      return preview;
+    });
+    elements.formationPreviewLayer.replaceChildren(...previews);
+  }
+
+  function startFormationPath(event) {
+    if (state.activeStageTool !== "formation-path" || event.button !== 0) return;
+    event.preventDefault();
+    pausePlayback();
+    const pointerStart = { x: event.clientX, y: event.clientY };
+    const rawPoints = [displayPositionFromPointer(event)];
+    let didMove = false;
+    let latestPlan = null;
+    elements.stage.setPointerCapture(event.pointerId);
+
+    function move(moveEvent) {
+      if (!didMove) {
+        didMove = hasPointerMoved(pointerStart, { x: moveEvent.clientX, y: moveEvent.clientY });
+        if (!didMove) return;
+      }
+      const point = displayPositionFromPointer(moveEvent);
+      const previous = rawPoints.at(-1);
+      if (Math.hypot(point.x - previous.x, point.y - previous.y) < 0.45) return;
+      if (rawPoints.length < 500) rawPoints.push(point);
+      latestPlan = createFormationPathPlan(rawPoints);
+      renderFormationPathPlan(latestPlan);
+    }
+
+    function cleanup(finishEvent) {
+      elements.stage.removeEventListener("pointermove", move);
+      elements.stage.removeEventListener("pointerup", finish);
+      elements.stage.removeEventListener("pointercancel", cancel);
+      if (elements.stage.hasPointerCapture(finishEvent.pointerId)) elements.stage.releasePointerCapture(finishEvent.pointerId);
+    }
+
+    function finish(finishEvent) {
+      cleanup(finishEvent);
+      if (!didMove || !latestPlan) {
+        clearFormationPathPreview();
+        showToast("Draw a longer path before releasing.");
+        return;
+      }
+      if (latestPlan.spacing < 2.5) {
+        clearFormationPathPreview();
+        showToast("That path is too short to space the selected dancers safely.");
+        return;
+      }
+      const positions = latestPlan.entries.map((entry) => ({
+        dancerId: entry.dancerId,
+        ...displayToStagePosition(entry, state.stageOrientation),
+      }));
+      recordGroupPositions(positions, { label: `align ${positions.length} dancers to path` });
+      clearFormationPathPreview();
+    }
+
+    function cancel(cancelEvent) {
+      cleanup(cancelEvent);
+      clearFormationPathPreview();
+    }
+
+    elements.stage.addEventListener("pointermove", move);
+    elements.stage.addEventListener("pointerup", finish);
+    elements.stage.addEventListener("pointercancel", cancel);
+  }
+
   function startSelectionMarquee(event) {
-    if (event.button !== 0 || event.pointerType === "touch" || event.target.closest(".dancer-marker")) return;
+    if (
+      state.activeStageTool ||
+      event.button !== 0 ||
+      event.pointerType === "touch" ||
+      event.target.closest(".dancer-marker")
+    ) return;
     event.preventDefault();
     const pointerStart = { x: event.clientX, y: event.clientY };
     const start = displayPositionFromPointer(event, { clampToStage: false });
@@ -715,7 +852,7 @@
   }
 
   function startMarkerDrag(event) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || state.activeStageTool === "formation-path") return;
     event.preventDefault();
     const marker = event.currentTarget;
     const dancerId = marker.dataset.dancerId;
@@ -836,12 +973,12 @@
     })));
   }
 
-  function recordGroupPositions(positionEntries) {
+  function recordGroupPositions(positionEntries, options = {}) {
     const entries = Array.isArray(positionEntries) ? positionEntries : [];
     const entryMap = new Map(entries.map((entry) => [entry.dancerId, entry]));
     const affectedDancers = state.dancers.filter((dancer) => entryMap.has(dancer.id));
     if (affectedDancers.length === 0) return false;
-    const label = affectedDancers.length === 1 ? `move ${affectedDancers[0].name}` : `move ${affectedDancers.length} dancers`;
+    const label = options.label || (affectedDancers.length === 1 ? `move ${affectedDancers[0].name}` : `move ${affectedDancers.length} dancers`);
     const changed = commitDocumentEdit(label, () => {
       affectedDancers.forEach((dancer) => {
         const position = entryMap.get(dancer.id);
@@ -959,11 +1096,19 @@
 
   function renderSelectionControls() {
     const count = state.selectedDancerIds.length;
+    if (count < 2 && state.activeStageTool === "formation-path") {
+      state.activeStageTool = null;
+      elements.stage.dataset.tool = "";
+      clearFormationPathPreview();
+    }
     elements.selectionCount.textContent = `${count} selected`;
     elements.multiSelectButton.setAttribute("aria-pressed", String(state.multiSelectMode));
     elements.multiSelectButton.classList.toggle("is-active", state.multiSelectMode);
     elements.selectAllButton.disabled = state.dancers.length === 0 || count === state.dancers.length;
     elements.clearSelectionButton.disabled = count === 0;
+    elements.formationPathButton.disabled = count < 2;
+    elements.formationPathButton.setAttribute("aria-pressed", String(state.activeStageTool === "formation-path"));
+    elements.formationPathButton.classList.toggle("is-active", state.activeStageTool === "formation-path");
   }
 
   function renderSelection() {
@@ -1513,6 +1658,12 @@
     }
   }
 
+  function handleStageToolShortcut(event) {
+    if (event.key !== "Escape" || !state.activeStageTool || isNativeEditingTarget(event.target)) return;
+    event.preventDefault();
+    setActiveStageTool(state.activeStageTool);
+  }
+
   function bindEvents() {
     elements.addDancerForm.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -1526,6 +1677,7 @@
       setSelectedDancerIds(dancerIds, { primaryDancerId: state.selectedDancerId || dancerIds.at(-1) });
     });
     elements.clearSelectionButton.addEventListener("click", () => setSelectedDancerIds([]));
+    elements.formationPathButton.addEventListener("click", () => setActiveStageTool("formation-path"));
     elements.zoomOutButton.addEventListener("click", () => setStageZoom(state.stageZoom - STAGE_ZOOM_STEP));
     elements.zoomResetButton.addEventListener("click", () => setStageZoom(1));
     elements.zoomInButton.addEventListener("click", () => setStageZoom(state.stageZoom + STAGE_ZOOM_STEP));
@@ -1536,6 +1688,7 @@
     elements.stageViewport.addEventListener("pointercancel", finishStageTouchPointer);
     elements.stageViewport.addEventListener("lostpointercapture", finishStageTouchPointer);
     elements.stage.addEventListener("pointerdown", startSelectionMarquee);
+    elements.stage.addEventListener("pointerdown", startFormationPath);
     elements.newProjectButton.addEventListener("click", startNewProject);
     elements.themeToggle.addEventListener("click", toggleTheme);
     elements.undoButton.addEventListener("click", undoDocumentEdit);
@@ -1655,6 +1808,7 @@
       state.markerElements.get(dancer.id)?.focus();
     });
     window.addEventListener("keydown", handleHistoryShortcut);
+    window.addEventListener("keydown", handleStageToolShortcut);
     window.addEventListener("pagehide", () => {
       syncPendingTitleForExit();
       flushSave();

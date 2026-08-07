@@ -15,6 +15,7 @@ const {
   displayToStagePosition,
   formatTime,
   getLatestKeyframeTime,
+  getPolylineLength,
   getPositionAtTime,
   getNextAvailableDancerNumber,
   hasPointerMoved,
@@ -23,6 +24,8 @@ const {
   normalizeStageOrientation,
   normalizeProjectTitle,
   normalizeKeyframes,
+  orderPositionsAlongPath,
+  prepareFormationPath,
   pushHistory,
   redoHistory,
   samplePolyline,
@@ -62,6 +65,26 @@ test("polyline sampling distributes positions at equal path distances", () => {
     { x: 50, y: 50 },
   ]);
   assert.deepEqual(samplePolyline([{ x: 5, y: 5 }], 4), []);
+});
+
+test("formation paths straighten rough lines and smooth intentional curves", () => {
+  const roughLine = prepareFormationPath([{ x: 10, y: 20 }, { x: 50, y: 21 }, { x: 90, y: 20 }]);
+  assert.deepEqual(roughLine, [{ x: 10, y: 20 }, { x: 90, y: 20 }]);
+
+  const curve = prepareFormationPath([{ x: 10, y: 80 }, { x: 50, y: 20 }, { x: 90, y: 80 }]);
+  assert.ok(curve.length > 3);
+  assert.deepEqual(curve[0], { x: 10, y: 80 });
+  assert.deepEqual(curve.at(-1), { x: 90, y: 80 });
+  assert.ok(getPolylineLength(curve) > 80);
+});
+
+test("dancers are ordered along a path by their nearest progress", () => {
+  const path = [{ x: 0, y: 50 }, { x: 100, y: 50 }];
+  assert.deepEqual(orderPositionsAlongPath([
+    { x: 80, y: 55 },
+    { x: 10, y: 45 },
+    { x: 50, y: 60 },
+  ], path), [1, 2, 0]);
 });
 
 test("position is held before the first and after the last keyframe", () => {

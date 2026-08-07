@@ -88,6 +88,10 @@
               </button>
               <button id="select-all-button" class="stage-action-button" type="button">Select all</button>
               <button id="clear-selection-button" class="stage-action-button" type="button">Clear</button>
+              <button id="formation-path-button" class="stage-action-button" type="button" aria-pressed="false">
+                <span aria-hidden="true">〰</span>
+                Align to path
+              </button>
               <span id="selection-count" class="stage-selection-count" aria-live="polite">0 selected</span>
             </div>
 
@@ -102,6 +106,10 @@
                 <div class="stage-grid" aria-hidden="true"></div>
                 <div class="stage-centre-line" aria-hidden="true"></div>
                 <div class="stage-front" aria-hidden="true">FRONT OF STAGE</div>
+                <svg id="formation-path-overlay" class="formation-path-overlay is-hidden" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <polyline id="formation-path-line" points="" vector-effect="non-scaling-stroke"></polyline>
+                </svg>
+                <div id="formation-preview-layer" class="formation-preview-layer" aria-hidden="true"></div>
                 <div id="empty-stage" class="empty-stage">
                   <strong>Your stage is empty</strong>
                   <span>Add a dancer to begin plotting formations.</span>
