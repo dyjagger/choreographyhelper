@@ -45,6 +45,7 @@ jobs:
         run: |
           $version = node -p "require('./package.json').version"
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' "/DMyAppVersion=$version" 'desktop\installer.iss'
+          Copy-Item "out\installer\Formation-Studio-Setup-$version.exe" 'out\installer\Formation-Studio-Setup-Windows-x64.exe' -Force
 
       - name: Build portable archive
         shell: pwsh

@@ -13,6 +13,7 @@ const {
   createUniqueLocalDancerId,
   createHistory,
   displayToStagePosition,
+  ensureTimeInTimelineViewport,
   formatTime,
   getDancerMarkerLabel,
   getHoldIntervals,
@@ -25,18 +26,23 @@ const {
   isValidProjectData,
   normalizeDancerName,
   normalizeStageOrientation,
+  normalizeTimelineViewport,
   normalizeProjectTitle,
   normalizeKeyframes,
   orderPositionsAlongPath,
+  panTimelineViewport,
   prepareFormationPath,
   pushHistory,
   redoHistory,
+  retimeHoldInterval,
   samplePolyline,
   shouldPauseAfterPlaybackStartSettles,
   stageToDisplayPosition,
+  timeToTimelinePercent,
   undoHistory,
   upsertKeyframe,
   upsertPositionKeyframe,
+  zoomTimelineViewport,
 } = require("./core.js");
 
 test("stage orientation mirrors only the vertical coordinate and round-trips", () => {
@@ -175,6 +181,120 @@ test("editing a recorded position preserves hold and resume metadata", () => {
     { time: 10, x: 20, y: 30, hold: true },
     { time: 20, x: 80, y: 40, hold: false },
   ]);
+});
+
+test("retiming a relocated resume preserves its arrival and creates real travel time", () => {
+  const frames = [
+    { time: 0, x: 0, y: 50 },
+    { time: 10, x: 20, y: 50, hold: true },
+    { time: 15, x: 60, y: 50, hold: false },
+    { time: 20, x: 100, y: 50 },
+  ];
+  const result = retimeHoldInterval(frames, 10, 15, 10, 12);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.retainedArrival, true);
+  assert.deepEqual(result.keyframes, [
+    { time: 0, x: 0, y: 50 },
+    { time: 10, x: 20, y: 50, hold: true },
+    { time: 12, x: 20, y: 50, hold: false },
+    { time: 15, x: 60, y: 50 },
+    { time: 20, x: 100, y: 50 },
+  ]);
+  assert.deepEqual(getPositionAtTime(result.keyframes, 11), { x: 20, y: 50 });
+  assert.deepEqual(getPositionAtTime(result.keyframes, 13.5), { x: 40, y: 50 });
+  assert.deepEqual(getPositionAtTime(result.keyframes, 15), { x: 60, y: 50 });
+});
+
+test("retiming an ordinary resume moves the event instead of leaving a phantom stop", () => {
+  const frames = [
+    { time: 0, x: 0, y: 50 },
+    { time: 10, x: 20, y: 50, hold: true },
+    { time: 15, x: 20, y: 50, hold: false },
+    { time: 20, x: 100, y: 50 },
+  ];
+  const result = retimeHoldInterval(frames, 10, 15, 10, 12);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.retainedArrival, false);
+  assert.deepEqual(result.keyframes, [
+    { time: 0, x: 0, y: 50 },
+    { time: 10, x: 20, y: 50, hold: true },
+    { time: 12, x: 20, y: 50, hold: false },
+    { time: 20, x: 100, y: 50 },
+  ]);
+  assert.deepEqual(getPositionAtTime(result.keyframes, 16), { x: 60, y: 50 });
+});
+
+test("retiming a hold start freezes the underlying interpolated position", () => {
+  const frames = [
+    { time: 0, x: 0, y: 50 },
+    { time: 10, x: 20, y: 50, hold: true },
+    { time: 15, x: 20, y: 50, hold: false },
+    { time: 20, x: 100, y: 50 },
+  ];
+  const result = retimeHoldInterval(frames, 10, 15, 8, 12);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.holdPosition, { x: 16, y: 50 });
+  assert.deepEqual(getHoldIntervals(result.keyframes), [{ start: 8, end: 12, x: 16, y: 50 }]);
+  assert.deepEqual(getPositionAtTime(result.keyframes, 10), { x: 16, y: 50 });
+  assert.deepEqual(getPositionAtTime(result.keyframes, 12), { x: 16, y: 50 });
+});
+
+test("an ongoing hold can gain an explicit resume without losing its next destination", () => {
+  const frames = [
+    { time: 0, x: 0, y: 50 },
+    { time: 10, x: 20, y: 50, hold: true },
+    { time: 20, x: 100, y: 50 },
+  ];
+  const result = retimeHoldInterval(frames, 10, null, 10, 15);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(getHoldIntervals(result.keyframes), [{ start: 10, end: 15, x: 20, y: 50 }]);
+  assert.deepEqual(getPositionAtTime(result.keyframes, 17.5), { x: 60, y: 50 });
+});
+
+test("hold retiming rejects zero-duration holds and resume collisions", () => {
+  const frames = [
+    { time: 10, x: 20, y: 50, hold: true },
+    { time: 15, x: 60, y: 50, hold: false },
+  ];
+  assert.deepEqual(retimeHoldInterval(frames, 10, 15, 10, 10.01), {
+    ok: false,
+    reason: "invalid-range",
+  });
+  assert.deepEqual(retimeHoldInterval(frames, 10, 15, 10, 15), {
+    ok: false,
+    reason: "resume-conflict",
+    conflictTime: 15,
+  });
+  assert.deepEqual(retimeHoldInterval([
+    { time: 0, x: 10, y: 50, hold: true },
+    { time: 5, x: 10, y: 50, hold: false },
+    ...frames,
+  ], 10, 15, 4, 12), {
+    ok: false,
+    reason: "hold-conflict",
+    conflictTime: 5,
+  });
+});
+
+test("timeline viewport zoom anchors, pans, maps, and follows without changing duration", () => {
+  assert.deepEqual(normalizeTimelineViewport({ start: -5, end: 55 }, 100, 10), { start: 0, end: 60 });
+  assert.deepEqual(zoomTimelineViewport({ start: 0, end: 100 }, 25, 2, 100, 10), {
+    start: 12.5,
+    end: 62.5,
+  });
+  assert.deepEqual(panTimelineViewport({ start: 12.5, end: 62.5 }, 50, 100, 10), {
+    start: 50,
+    end: 100,
+  });
+  assert.deepEqual(ensureTimeInTimelineViewport({ start: 20, end: 40 }, 50, 100, 10), {
+    start: 32,
+    end: 52,
+  });
+  assert.equal(timeToTimelinePercent(30, { start: 20, end: 40 }, 100, 10), 50);
 });
 
 test("keyframes are sorted and coordinates are clamped to the stage", () => {

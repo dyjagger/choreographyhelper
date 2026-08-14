@@ -35,7 +35,9 @@ Use the `−`, `100%`, and `+` controls, the mouse wheel, or a two-finger pinch 
 
 Use modifier-click or a desktop selection rectangle to select several dancers. On touch screens, tap dancers to add or remove them from the selection. **Select all** and **Clear** provide quick selection controls. Dragging any selected dancer or pressing an arrow key moves the selected formation as one rigid group and records one undoable edit at the current playhead time.
 
-Select dancers and choose **Hold position** to freeze them from the current playhead time. Their dotted stage rings and the dotted timeline range show the active hold. Move to a later time and choose **End hold**; they then continue toward their next recorded destination. Hold and resume events are saved, exported, imported, and undoable.
+Select dancers and choose **Hold position**, or press **H** while focus is outside a text field, to freeze them from the current playhead time. Their dotted stage rings and the dotted timeline range show the active hold. Move to a later time and choose **End hold** or press **H** again; they then continue toward their next recorded destination. Click a dotted hold range, Hold chip, or Resume chip to edit its timing as an Apply/Cancel transaction. You can type exact start/resume times or move the timeline and choose **Use current time**. Moving Resume earlier keeps the later formation as the destination so the dancer travels instead of teleporting. Hold and resume events are saved, exported, imported, and undoable.
+
+Use the mouse wheel over the timeline to zoom around the pointer. Hold Shift while wheeling to pan the visible window, or use the timeline −, +, and **Fit** controls. Timeline zoom is view-only and never changes choreography timing or exported data.
 
 Select two or more dancers and activate **Align to path** to draw a freeform curve. Hold Shift while dragging to snap the path to a perfectly straight line. Labeled ghost markers preview the result before the dancers are evenly placed along the path.
 
@@ -54,6 +56,11 @@ npm test
 ## Windows desktop edition
 
 The Windows edition uses the same local-first editor and `.formation` files as the web edition. Its Electron renderer is sandboxed, has no Node access, uses context isolation, denies permission requests and navigation, and loads only the allowlisted local application files.
+
+Download the latest Windows x64 edition:
+
+- [Installer](https://github.com/dyjagger/choreographyhelper/releases/latest/download/Formation-Studio-Setup-Windows-x64.exe)
+- [Portable ZIP](https://github.com/dyjagger/choreographyhelper/releases/latest/download/Formation-Studio-Windows-x64.zip)
 
 Run the desktop edition during development:
 
