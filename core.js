@@ -272,6 +272,172 @@
     return intervals;
   }
 
+  function positionsMatch(left, right, epsilon = POSITION_EPSILON) {
+    return Boolean(left && right) &&
+      Math.abs(Number(left.x) - Number(right.x)) <= epsilon &&
+      Math.abs(Number(left.y) - Number(right.y)) <= epsilon;
+  }
+
+  function withoutHoldMetadata(frame) {
+    return { time: frame.time, x: frame.x, y: frame.y };
+  }
+
+  function retimeHoldInterval(keyframes, originalStart, originalEnd, nextStart, nextEnd) {
+    const frames = normalizeKeyframes(keyframes);
+    const originalStartTime = Number(originalStart);
+    const originalEndTime = originalEnd === null || originalEnd === undefined ? null : Number(originalEnd);
+    const nextStartTime = Number(nextStart);
+    const nextEndTime = nextEnd === null || nextEnd === undefined || nextEnd === "" ? null : Number(nextEnd);
+    if (!Number.isFinite(originalStartTime) || !Number.isFinite(nextStartTime) || nextStartTime < 0) {
+      return { ok: false, reason: "invalid-range" };
+    }
+    if (nextEndTime !== null && (
+      !Number.isFinite(nextEndTime) ||
+      nextEndTime < 0 ||
+      nextEndTime - nextStartTime <= TIME_EPSILON
+    )) {
+      return { ok: false, reason: "invalid-range" };
+    }
+
+    const startIndex = frames.findIndex((frame) => (
+      frame.hold === true && Math.abs(frame.time - originalStartTime) <= TIME_EPSILON
+    ));
+    if (startIndex < 0) return { ok: false, reason: "hold-not-found" };
+
+    let endIndex = -1;
+    if (originalEndTime !== null) {
+      endIndex = frames.findIndex((frame, index) => (
+        index > startIndex &&
+        frame.hold === false &&
+        Math.abs(frame.time - originalEndTime) <= TIME_EPSILON
+      ));
+      if (endIndex < 0) return { ok: false, reason: "resume-not-found" };
+    }
+
+    const originalHoldFrame = frames[startIndex];
+    const originalResumeFrame = endIndex >= 0 ? frames[endIndex] : null;
+    const retainedArrival = Boolean(
+      originalResumeFrame && !positionsMatch(originalHoldFrame, originalResumeFrame),
+    );
+    const baseFrames = frames.flatMap((frame, index) => {
+      if (index === startIndex) return [withoutHoldMetadata(frame)];
+      if (index !== endIndex) return [frame];
+      return retainedArrival ? [withoutHoldMetadata(frame)] : [];
+    });
+    const overlappingHoldEvent = baseFrames.find((frame) => (
+      typeof frame.hold === "boolean" &&
+      frame.time >= nextStartTime - TIME_EPSILON &&
+      (nextEndTime === null || frame.time <= nextEndTime + TIME_EPSILON)
+    ));
+    const overlappingActiveHold = getHoldStateAtTime(baseFrames, nextStartTime).active;
+    if (overlappingHoldEvent || overlappingActiveHold) {
+      return {
+        ok: false,
+        reason: "hold-conflict",
+        conflictTime: overlappingHoldEvent?.time ?? getHoldStateAtTime(baseFrames, nextStartTime).event?.time,
+      };
+    }
+    const holdPosition = getPositionAtTime(baseFrames, nextStartTime) || {
+      x: originalHoldFrame.x,
+      y: originalHoldFrame.y,
+    };
+    let nextFrames = upsertKeyframe(baseFrames, {
+      time: nextStartTime,
+      x: holdPosition.x,
+      y: holdPosition.y,
+      hold: true,
+    });
+
+    if (nextEndTime !== null) {
+      const resumeConflict = nextFrames.find((frame) => (
+        Math.abs(frame.time - nextEndTime) <= TIME_EPSILON && !positionsMatch(frame, holdPosition)
+      ));
+      if (resumeConflict) {
+        return {
+          ok: false,
+          reason: "resume-conflict",
+          conflictTime: resumeConflict.time,
+        };
+      }
+      nextFrames = upsertKeyframe(nextFrames, {
+        time: nextEndTime,
+        x: holdPosition.x,
+        y: holdPosition.y,
+        hold: false,
+      });
+    }
+
+    return {
+      ok: true,
+      keyframes: normalizeKeyframes(nextFrames),
+      holdPosition: { x: holdPosition.x, y: holdPosition.y },
+      retainedArrival,
+    };
+  }
+
+  function normalizeTimelineViewport(viewport, duration, minimumSpan = 1) {
+    const safeDuration = Math.max(TIME_EPSILON, Number(duration) || 1);
+    const safeMinimumSpan = Math.min(
+      safeDuration,
+      Math.max(TIME_EPSILON, Number(minimumSpan) || 1),
+    );
+    const requestedStart = Number(viewport?.start);
+    const requestedEnd = Number(viewport?.end);
+    if (!Number.isFinite(requestedStart) || !Number.isFinite(requestedEnd) || requestedEnd <= requestedStart) {
+      return { start: 0, end: safeDuration };
+    }
+    const span = clamp(requestedEnd - requestedStart, safeMinimumSpan, safeDuration);
+    const start = clamp(requestedStart, 0, safeDuration - span);
+    return { start, end: start + span };
+  }
+
+  function zoomTimelineViewport(viewport, anchorTime, zoomFactor, duration, minimumSpan = 1) {
+    const current = normalizeTimelineViewport(viewport, duration, minimumSpan);
+    const safeDuration = Math.max(TIME_EPSILON, Number(duration) || 1);
+    const factor = Number(zoomFactor);
+    if (!Number.isFinite(factor) || factor <= 0) return current;
+    const currentSpan = current.end - current.start;
+    const safeMinimumSpan = Math.min(
+      safeDuration,
+      Math.max(TIME_EPSILON, Number(minimumSpan) || 1),
+    );
+    const nextSpan = clamp(currentSpan / factor, safeMinimumSpan, safeDuration);
+    const anchor = clamp(anchorTime, current.start, current.end);
+    const anchorRatio = currentSpan <= TIME_EPSILON ? 0.5 : (anchor - current.start) / currentSpan;
+    return normalizeTimelineViewport({
+      start: anchor - nextSpan * anchorRatio,
+      end: anchor + nextSpan * (1 - anchorRatio),
+    }, safeDuration, safeMinimumSpan);
+  }
+
+  function panTimelineViewport(viewport, deltaTime, duration, minimumSpan = 1) {
+    const current = normalizeTimelineViewport(viewport, duration, minimumSpan);
+    const shift = Number(deltaTime) || 0;
+    return normalizeTimelineViewport({
+      start: current.start + shift,
+      end: current.end + shift,
+    }, duration, minimumSpan);
+  }
+
+  function ensureTimeInTimelineViewport(viewport, time, duration, minimumSpan = 1, marginRatio = 0.1) {
+    const current = normalizeTimelineViewport(viewport, duration, minimumSpan);
+    const target = clamp(time, 0, Math.max(TIME_EPSILON, Number(duration) || 1));
+    const span = current.end - current.start;
+    const margin = span * clamp(marginRatio, 0, 0.45);
+    if (target < current.start - TIME_EPSILON) {
+      return panTimelineViewport(current, target - current.start - margin, duration, minimumSpan);
+    }
+    if (target > current.end + TIME_EPSILON) {
+      return panTimelineViewport(current, target - current.end + margin, duration, minimumSpan);
+    }
+    return current;
+  }
+
+  function timeToTimelinePercent(time, viewport, duration, minimumSpan = 1) {
+    const normalized = normalizeTimelineViewport(viewport, duration, minimumSpan);
+    return ((Number(time) - normalized.start) / (normalized.end - normalized.start)) * 100;
+  }
+
   function getPositionAtTime(keyframes, time) {
     const frames = normalizeKeyframes(keyframes);
     if (frames.length === 0) return null;
@@ -522,21 +688,27 @@
     getPositionAtTime,
     getNextAvailableDancerNumber,
     hasPointerMoved,
+    ensureTimeInTimelineViewport,
     isValidProjectData,
     normalizeKeyframes,
     normalizeDancerName,
     normalizeStageOrientation,
+    normalizeTimelineViewport,
     normalizeProjectTitle,
     orderPositionsAlongPath,
     prepareFormationPath,
+    panTimelineViewport,
     pushHistory,
     redoHistory,
     samplePolyline,
     shouldPauseAfterPlaybackStartSettles,
     stageToDisplayPosition,
+    timeToTimelinePercent,
+    retimeHoldInterval,
     undoHistory,
     upsertKeyframe,
     upsertPositionKeyframe,
+    zoomTimelineViewport,
   };
 
   globalScope.ChoreoCore = api;

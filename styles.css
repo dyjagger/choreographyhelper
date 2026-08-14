@@ -823,8 +823,56 @@ input:focus-visible,
 
 .timeline-wrap {
   position: relative;
-  margin: 21px 0 13px;
-  padding-top: 34px;
+  margin: 7px 0 5px;
+  padding-top: 59px;
+}
+
+.timeline-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+}
+
+.timeline-zoom-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.timeline-zoom-control button {
+  min-width: 32px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--field-bg);
+  font: inherit;
+  font-weight: 820;
+}
+
+.timeline-zoom-control button:hover:not(:disabled),
+.timeline-zoom-control button:focus-visible {
+  border-color: var(--purple);
+}
+
+.timeline-zoom-control output {
+  min-width: 42px;
+  text-align: center;
+}
+
+.timeline-hint {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.65rem;
+  line-height: 1.35;
+  text-align: right;
 }
 
 .timeline {
@@ -839,20 +887,27 @@ input:focus-visible,
 
 .hold-track {
   position: absolute;
-  top: 6px;
+  top: 31px;
   right: 7px;
   left: 7px;
-  z-index: 1;
-  height: 8px;
+  z-index: 3;
+  height: 18px;
   pointer-events: none;
 }
 
 .hold-range {
   position: absolute;
-  top: 2px;
+  top: 0;
+  height: 18px;
   min-width: 5px;
+  padding: 0;
+  border: 0;
   border-top: 3px dotted var(--purple);
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
   opacity: 0.58;
+  pointer-events: auto;
 }
 
 .hold-range::before,
@@ -877,6 +932,22 @@ input:focus-visible,
 
 .hold-range.is-current {
   opacity: 1;
+}
+
+.hold-range:hover,
+.hold-range:focus-visible,
+.hold-range.is-editing {
+  opacity: 1;
+}
+
+.hold-range:focus-visible {
+  outline: 2px solid var(--purple);
+  outline-offset: 4px;
+}
+
+.hold-range.is-clipped-start::before,
+.hold-range.is-clipped-end::after {
+  display: none;
 }
 
 .keyframe-track {
@@ -966,6 +1037,59 @@ input:focus-visible,
 .transition-edit-actions .button {
   min-height: 38px;
   white-space: nowrap;
+}
+
+.hold-edit-content {
+  flex: 1 1 auto;
+}
+
+.hold-edit-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 7px;
+}
+
+.hold-edit-fields label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 760;
+}
+
+.hold-edit-fields input {
+  width: 82px;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--field-bg);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.hold-playhead-button {
+  min-height: 31px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--field-bg);
+  font-size: 0.68rem;
+  font-weight: 760;
+}
+
+.hold-playhead-button:hover,
+.hold-playhead-button:focus-visible {
+  border-color: var(--purple);
+}
+
+.hold-edit-bar .hold-edit-error {
+  min-height: 1em;
+  margin-top: 4px;
+  color: var(--danger);
 }
 
 .selected-summary {
@@ -1469,6 +1593,14 @@ input:focus-visible,
     flex: 1 1 0;
   }
 
+  .timeline-navigation {
+    align-items: flex-start;
+  }
+
+  .timeline-hint {
+    text-align: left;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
   }
@@ -1792,7 +1924,7 @@ input:focus-visible,
   }
 
   .timeline-wrap {
-    padding-top: 50px;
+    padding-top: 64px;
   }
 
   .volume-control input,

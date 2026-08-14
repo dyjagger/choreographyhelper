@@ -1,11 +1,11 @@
-# Formation Studio v2 Roadmap
+# Formation Studio Roadmap
 
 This roadmap records the approved upgrade sequence for the web editor and the
-future Windows desktop application. Work is developed away from `main` and is
+Windows desktop application. Work is developed away from `main` and is
 merged only after the milestone's acceptance checks pass.
 
-Implementation status: milestones 0–5 and the Windows application/build work
-are complete on the `roadmap/choreo-v2` branch. A clean-machine Windows
+Implementation status: milestones 0–9 and the Windows application/build work
+are complete on `main`. A clean-machine Windows
 installer check, public code signing, and advanced Formation Path controls
 remain release follow-ups.
 
@@ -66,7 +66,7 @@ Status: complete.
 - Zoom with a mouse wheel around the pointer location.
 - Pinch around the gesture midpoint on touch devices.
 - Pan a zoomed stage without changing dancer positions.
-- Constrain zoom to 50–300 percent.
+- Constrain zoom to 100–300 percent.
 
 Acceptance:
 
@@ -154,7 +154,7 @@ Release validation on a Windows machine:
 
 ## Milestone 7: Hold Position and editing refinements
 
-Status: complete on the feature branch.
+Status: complete and released in v0.2.0.
 
 - Clear loaded audio and video when starting a confirmed new project.
 - Record hold and resume events for one or many selected dancers.
@@ -172,3 +172,20 @@ Status: complete and approved for release in v0.3.0.
 - Preview stage and coordinate changes without writing them to local autosave.
 - Apply all changed dancers as one undoable edit or cancel back to the original formation.
 - Preserve hold and resume metadata when their positions are edited.
+
+## Milestone 9: Hold timing continuity and timeline navigation
+
+Status: complete, accepted, and approved for release in v0.4.0.
+
+- Make selected-dancer hold ranges and Hold/Resume chips open a transactional timing editor.
+- Keep Resume at the held coordinate while preserving a relocated legacy Resume position as a later arrival.
+- Prevent formation editing from relocating a Resume departure point.
+- Add pointer-anchored timeline wheel zoom, Shift-wheel panning, controls, Fit, and playback auto-follow.
+- Add a guarded H shortcut for Hold/End hold that does not fire while typing or editing.
+
+Acceptance:
+
+- The supplied `test1.json` can give each affected dancer a user-chosen movement interval without teleporting.
+- Apply is one undoable action; Cancel restores the original hold and formation exactly.
+- Timeline zoom never changes project duration, keyframes, autosave, or exported project data.
+- H works in both browser and Electron and is ignored in native input fields and open edit transactions.
