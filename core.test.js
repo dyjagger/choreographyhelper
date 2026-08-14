@@ -36,6 +36,7 @@ const {
   stageToDisplayPosition,
   undoHistory,
   upsertKeyframe,
+  upsertPositionKeyframe,
 } = require("./core.js");
 
 test("stage orientation mirrors only the vertical coordinate and round-trips", () => {
@@ -158,6 +159,22 @@ test("dropping at an existing time replaces rather than duplicates the keyframe"
 
   assert.equal(result.length, 1);
   assert.deepEqual(result[0], { time: 10.009, x: 65, y: 75 });
+});
+
+test("editing a recorded position preserves hold and resume metadata", () => {
+  const frames = [
+    { time: 10, x: 20, y: 30, hold: true },
+    { time: 20, x: 20, y: 30, hold: false },
+  ];
+
+  assert.deepEqual(upsertPositionKeyframe(frames, 10, { x: 65, y: 75 }), [
+    { time: 10, x: 65, y: 75, hold: true },
+    { time: 20, x: 20, y: 30, hold: false },
+  ]);
+  assert.deepEqual(upsertPositionKeyframe(frames, 20, { x: 80, y: 40 }), [
+    { time: 10, x: 20, y: 30, hold: true },
+    { time: 20, x: 80, y: 40, hold: false },
+  ]);
 });
 
 test("keyframes are sorted and coordinates are clamped to the stage", () => {
