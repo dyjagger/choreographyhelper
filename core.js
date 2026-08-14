@@ -229,6 +229,18 @@
     return normalizeKeyframes([...normalized, frame]);
   }
 
+  function upsertPositionKeyframe(keyframes, time, position, epsilon = TIME_EPSILON) {
+    const normalized = normalizeKeyframes(keyframes);
+    const existingFrame = normalized.find((frame) => Math.abs(frame.time - Number(time)) <= epsilon);
+    const nextFrame = {
+      time,
+      x: position?.x,
+      y: position?.y,
+    };
+    if (typeof existingFrame?.hold === "boolean") nextFrame.hold = existingFrame.hold;
+    return upsertKeyframe(normalized, nextFrame, epsilon);
+  }
+
   function getHoldStateFromFrames(frames, targetTime) {
     let event = null;
     for (const frame of frames) {
@@ -524,6 +536,7 @@
     stageToDisplayPosition,
     undoHistory,
     upsertKeyframe,
+    upsertPositionKeyframe,
   };
 
   globalScope.ChoreoCore = api;

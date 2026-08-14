@@ -112,6 +112,7 @@
                   <span>Add a dancer to begin plotting formations.</span>
                 </div>
                 <div id="selection-marquee" class="selection-marquee is-hidden" aria-hidden="true"></div>
+                <div id="transition-ghost-layer" class="transition-ghost-layer" aria-hidden="true"></div>
                 <div id="marker-layer" class="marker-layer"></div>
               </div>
             </div>
@@ -148,7 +149,7 @@
 
             <div class="timeline-wrap">
               <div id="hold-track" class="hold-track" aria-hidden="true"></div>
-              <div id="keyframe-track" class="keyframe-track" aria-hidden="true"></div>
+              <div id="keyframe-track" class="keyframe-track" role="group" aria-label="Selected dancer transition points"></div>
               <input
                 id="timeline"
                 class="timeline"
@@ -159,6 +160,17 @@
                 value="0"
                 aria-label="Choreography time"
               />
+            </div>
+
+            <div id="transition-edit-bar" class="transition-edit-bar is-hidden" aria-live="polite">
+              <div>
+                <strong id="transition-edit-title">Editing transition</strong>
+                <span id="transition-edit-detail">Move dancers to preview the new formation. Outlines show their original positions.</span>
+              </div>
+              <div class="transition-edit-actions">
+                <button id="cancel-transition-edit-button" class="button button-quiet" type="button">Cancel</button>
+                <button id="apply-transition-edit-button" class="button button-primary" type="button" disabled>Apply changes</button>
+              </div>
             </div>
 
             <div class="selected-summary">
@@ -277,6 +289,7 @@
               <li>Move the timeline to the desired time.</li>
               <li>Drag the dancer. Dropping it records that position.</li>
               <li>Add another position later, then press play.</li>
+              <li>Click a transition dot or recorded time to preview edits, then apply or cancel them.</li>
             </ol>
             <p class="keyboard-tip">Tip: selected dancers move with the arrow keys. Hold Shift for larger steps. Use Ctrl/Cmd+Z to undo.</p>
           </section>

@@ -30,6 +30,7 @@
     shouldPauseAfterPlaybackStartSettles,
     undoHistory,
     upsertKeyframe,
+    upsertPositionKeyframe,
     displayToStagePosition,
     normalizeStageOrientation,
     stageToDisplayPosition,
@@ -61,6 +62,7 @@
   const elements = {
     addDancerButton: document.querySelector("#add-dancer-button"),
     addDancerForm: document.querySelector("#add-dancer-form"),
+    applyTransitionEditButton: document.querySelector("#apply-transition-edit-button"),
     audioFileButton: document.querySelector("#audio-file-button"),
     audioDetails: document.querySelector("#audio-details"),
     audioDuration: document.querySelector("#audio-duration"),
@@ -68,6 +70,7 @@
     audioName: document.querySelector("#audio-name"),
     audioPlayer: document.querySelector("#audio-player"),
     currentTime: document.querySelector("#current-time"),
+    cancelTransitionEditButton: document.querySelector("#cancel-transition-edit-button"),
     clearSelectionButton: document.querySelector("#clear-selection-button"),
     coordinateEditor: document.querySelector("#coordinate-editor"),
     dancerCount: document.querySelector("#dancer-count"),
@@ -106,9 +109,14 @@
     selectionMarquee: document.querySelector("#selection-marquee"),
     selectionText: document.querySelector("#selection-text"),
     stage: document.querySelector("#stage"),
+    stageInstructions: document.querySelector("#stage-instructions"),
     stageViewport: document.querySelector("#stage-viewport"),
     audiencePositionLabel: document.querySelector("#audience-position-label"),
     timeline: document.querySelector("#timeline"),
+    transitionEditBar: document.querySelector("#transition-edit-bar"),
+    transitionEditDetail: document.querySelector("#transition-edit-detail"),
+    transitionEditTitle: document.querySelector("#transition-edit-title"),
+    transitionGhostLayer: document.querySelector("#transition-ghost-layer"),
     themeToggle: document.querySelector("#theme-toggle"),
     themeToggleIcon: document.querySelector("#theme-toggle-icon"),
     themeToggleText: document.querySelector("#theme-toggle-text"),
@@ -157,6 +165,7 @@
     stageOrientation: "front-bottom",
     stageZoom: 1,
     storageWriteBlocked: false,
+    transitionEdit: null,
     audioUrl: null,
     videoUrl: null,
     videoFile: null,
@@ -205,6 +214,216 @@
     return Boolean(dancer && getHoldStateAtTime(dancer.keyframes, time).active);
   }
 
+  function positionsMatch(left, right) {
+    return Boolean(left && right) &&
+      Math.abs(Number(left.x) - Number(right.x)) <= 0.0001 &&
+      Math.abs(Number(left.y) - Number(right.y)) <= 0.0001;
+  }
+
+  function isTransitionEditDirty() {
+    return Boolean(state.transitionEdit?.originalKeyframes.size);
+  }
+
+  function requireFinishedTransitionEdit() {
+    if (!state.transitionEdit) return true;
+    showToast("Apply or cancel the transition edit first.");
+    elements.applyTransitionEditButton.focus();
+    return false;
+  }
+
+  function renderTransitionGhosts() {
+    const edit = state.transitionEdit;
+    if (!edit) {
+      elements.transitionGhostLayer.replaceChildren();
+      return;
+    }
+    const ghosts = [...edit.originalPositions.entries()].flatMap(([dancerId, position]) => {
+      const dancer = state.dancers.find((candidate) => candidate.id === dancerId);
+      if (!dancer) return [];
+      const displayedPosition = stageToDisplayPosition(position, state.stageOrientation);
+      const ghost = document.createElement("span");
+      ghost.className = "transition-position-ghost";
+      ghost.style.left = `${displayedPosition.x}%`;
+      ghost.style.top = `${displayedPosition.y}%`;
+      ghost.style.setProperty("--marker-color", dancer.color);
+      ghost.textContent = getDancerMarkerLabel(dancer.name, dancer.number);
+      return [ghost];
+    });
+    elements.transitionGhostLayer.replaceChildren(...ghosts);
+  }
+
+  function renderTransitionEditMode() {
+    const edit = state.transitionEdit;
+    const isEditing = Boolean(edit);
+    const isDirty = isTransitionEditDirty();
+    elements.transitionEditBar.classList.toggle("is-hidden", !isEditing);
+    elements.stage.classList.toggle("is-transition-editing", isEditing);
+    elements.stageInstructions.textContent = isEditing
+      ? "Move dancers to preview this transition. Outlines show their original positions."
+      : "Select a time, then drag a dancer to record a position.";
+    elements.recordCoordinatesButton.textContent = isEditing ? "Preview position" : "Record here";
+    elements.applyTransitionEditButton.disabled = !isDirty;
+    if (edit) {
+      elements.transitionEditTitle.textContent = `Editing transition at ${formatTime(edit.time)}`;
+      const changedCount = edit.originalKeyframes.size;
+      elements.transitionEditDetail.textContent = changedCount === 0
+        ? "Move dancers to preview the new formation. Outlines will show their original positions."
+        : `${changedCount} dancer${changedCount === 1 ? "" : "s"} changed. Outlines show the original formation.`;
+    }
+
+    const alwaysUnlocked = [
+      elements.projectTitle,
+      elements.newProjectButton,
+      elements.exportButton,
+      elements.exportPackageButton,
+      elements.importButton,
+      elements.replaceLocalSaveButton,
+      elements.frontTopButton,
+      elements.frontBottomButton,
+      elements.playButton,
+      elements.restartButton,
+      elements.timeline,
+      elements.timeInput,
+      elements.audioFileButton,
+      elements.removeAudioButton,
+      elements.volumeInput,
+      elements.videoFileButton,
+      elements.removeVideoButton,
+      elements.videoVolumeInput,
+      elements.newDancerNameInput,
+    ];
+    alwaysUnlocked.forEach((control) => {
+      control.disabled = isEditing;
+    });
+    elements.durationInput.disabled = isEditing || state.audioUrl !== null || state.videoUrl !== null;
+    elements.addDancerButton.disabled = isEditing || state.dancers.length >= MAX_DANCERS;
+    if (isEditing) {
+      elements.undoButton.disabled = true;
+      elements.redoButton.disabled = true;
+      elements.holdPositionButton.disabled = true;
+      const selectedDancer = getSelectedDancer();
+      const holdState = selectedDancer ? getHoldStateAtTime(selectedDancer.keyframes, edit.time) : null;
+      const canEditSelectedPosition = Boolean(selectedDancer) && (
+        !holdState?.active || Math.abs(Number(holdState.event?.time) - edit.time) <= TIME_EPSILON
+      );
+      elements.xInput.disabled = !canEditSelectedPosition;
+      elements.yInput.disabled = !canEditSelectedPosition;
+      elements.recordCoordinatesButton.disabled = !canEditSelectedPosition;
+      elements.coordinateEditor.title = canEditSelectedPosition
+        ? "Preview this position, then apply the transition changes"
+        : "End this dancer's earlier hold before changing this transition";
+    }
+    renderTransitionGhosts();
+  }
+
+  function startTransitionEdit(dancerId, frameTime) {
+    const dancer = state.dancers.find((candidate) => candidate.id === dancerId);
+    if (!dancer) return;
+    if (state.transitionEdit) {
+      const isSameTransition = state.transitionEdit.sourceDancerId === dancerId &&
+        Math.abs(state.transitionEdit.time - frameTime) <= TIME_EPSILON;
+      if (isSameTransition) {
+        state.markerElements.get(dancerId)?.focus();
+        return;
+      }
+      if (isTransitionEditDirty()) {
+        requireFinishedTransitionEdit();
+        return;
+      }
+      cancelTransitionEdit({ announce: false });
+    }
+
+    pausePlayback();
+    setSelectedDancerIds([dancerId], { primaryDancerId: dancerId, render: false });
+    setCurrentTime(frameTime);
+    state.transitionEdit = {
+      beforeSnapshot: captureDocumentSnapshot(),
+      originalKeyframes: new Map(),
+      originalPositions: new Map(),
+      sourceDancerId: dancerId,
+      time: frameTime,
+    };
+    renderAll();
+    setSaveStatus("Transition preview not applied");
+    state.markerElements.get(dancerId)?.focus();
+  }
+
+  function previewTransitionPositions(positionEntries, options = {}) {
+    const edit = state.transitionEdit;
+    if (!edit) return false;
+    const entryMap = new Map(positionEntries.map((entry) => [entry.dancerId, entry]));
+    const affectedDancers = state.dancers.filter((dancer) => entryMap.has(dancer.id));
+    if (affectedDancers.length === 0) return false;
+
+    const blockedDancer = affectedDancers.find((dancer) => {
+      const originalFrames = edit.originalKeyframes.get(dancer.id) || dancer.keyframes;
+      const holdState = getHoldStateAtTime(originalFrames, edit.time);
+      return holdState.active && Math.abs(Number(holdState.event?.time) - edit.time) > TIME_EPSILON;
+    });
+    if (blockedDancer) {
+      showToast(`End ${blockedDancer.name}'s active hold before changing this transition.`);
+      renderMarkerPositions();
+      return false;
+    }
+
+    affectedDancers.forEach((dancer) => {
+      if (!edit.originalKeyframes.has(dancer.id)) {
+        const originalFrames = normalizeKeyframes(dancer.keyframes);
+        edit.originalKeyframes.set(dancer.id, originalFrames);
+        edit.originalPositions.set(dancer.id, getPositionAtTime(originalFrames, edit.time));
+      }
+      const originalFrames = edit.originalKeyframes.get(dancer.id);
+      const originalPosition = edit.originalPositions.get(dancer.id);
+      const nextPosition = entryMap.get(dancer.id);
+      if (positionsMatch(originalPosition, nextPosition)) {
+        dancer.keyframes = normalizeKeyframes(originalFrames);
+        edit.originalKeyframes.delete(dancer.id);
+        edit.originalPositions.delete(dancer.id);
+      } else {
+        dancer.keyframes = upsertPositionKeyframe(originalFrames, edit.time, nextPosition);
+      }
+    });
+    renderAll();
+    setSaveStatus("Transition preview not applied");
+    const subject = options.subject || (affectedDancers.length === 1 ? affectedDancers[0].name : `${affectedDancers.length} dancers`);
+    showToast(`${subject} previewed at ${formatTime(edit.time)}. Apply changes when ready.`);
+    return true;
+  }
+
+  function applyTransitionEdit() {
+    const edit = state.transitionEdit;
+    if (!edit) return;
+    if (!isTransitionEditDirty()) {
+      state.transitionEdit = null;
+      renderAll();
+      setSaveStatus("Saved locally");
+      return;
+    }
+    const changedCount = edit.originalKeyframes.size;
+    state.transitionEdit = null;
+    const changed = commitDocumentEdit(
+      `edit transition at ${formatTime(edit.time)}`,
+      () => {},
+      { beforeSnapshot: edit.beforeSnapshot },
+    );
+    if (changed) {
+      showToast(`${changedCount} dancer${changedCount === 1 ? "" : "s"} updated at ${formatTime(edit.time)}.`);
+      elements.undoButton.focus();
+    }
+  }
+
+  function cancelTransitionEdit(options = {}) {
+    const edit = state.transitionEdit;
+    if (!edit) return;
+    const wasDirty = isTransitionEditDirty();
+    state.transitionEdit = null;
+    replaceDocumentData(edit.beforeSnapshot.project, edit.beforeSnapshot);
+    renderAll();
+    setSaveStatus("Saved locally");
+    if (options.announce !== false) showToast(wasDirty ? "Transition changes discarded." : "Transition editing closed.");
+    state.markerElements.get(edit.sourceDancerId)?.focus();
+  }
+
   function setSelectedDancerIds(dancerIds, options = {}) {
     const availableIds = new Set(state.dancers.map((dancer) => dancer.id));
     const nextIds = [...new Set(Array.isArray(dancerIds) ? dancerIds : [])]
@@ -219,6 +438,7 @@
     renderDancerList();
     renderMarkerPositions();
     renderSelectionControls();
+    renderTransitionEditMode();
   }
 
   function getLoadedMediaPlayers() {
@@ -319,6 +539,10 @@
   }
 
   function commitDocumentEdit(label, mutation, options = {}) {
+    if (state.transitionEdit && options.allowDuringTransitionEdit !== true) {
+      requireFinishedTransitionEdit();
+      return false;
+    }
     const before = options.beforeSnapshot || captureDocumentSnapshot();
     const mutationResult = mutation();
     const after = captureDocumentSnapshot();
@@ -353,6 +577,7 @@
   }
 
   function undoDocumentEdit(options = {}) {
+    if (!requireFinishedTransitionEdit()) return;
     const entry = state.history.past.at(-1);
     if (!entry) return;
     const result = undoHistory(state.history, {
@@ -365,6 +590,7 @@
   }
 
   function redoDocumentEdit(options = {}) {
+    if (!requireFinishedTransitionEdit()) return;
     const entry = state.history.future[0];
     if (!entry) return;
     const result = redoHistory(state.history, {
@@ -386,6 +612,7 @@
   }
 
   function startNewProject() {
+    if (!requireFinishedTransitionEdit()) return;
     const shouldReset = window.confirm(
       "Start a new project? This permanently clears the choreography, loaded audio, and loaded video. Export anything you want to keep first.",
     );
@@ -532,6 +759,7 @@
       marker.style.top = `${displayedPosition.y}%`;
       marker.classList.toggle("is-selected", selectedIds.has(dancer.id));
       marker.classList.toggle("is-primary", dancer.id === state.selectedDancerId);
+      marker.classList.toggle("is-transition-draft", Boolean(state.transitionEdit?.originalKeyframes.has(dancer.id)));
       const isHolding = isDancerHolding(dancer);
       marker.classList.toggle("is-holding", isHolding);
       marker.setAttribute("aria-pressed", String(selectedIds.has(dancer.id)));
@@ -992,6 +1220,7 @@
 
   function recordGroupPositions(positionEntries, options = {}) {
     const entries = Array.isArray(positionEntries) ? positionEntries : [];
+    if (state.transitionEdit) return previewTransitionPositions(entries, options);
     const entryMap = new Map(entries.map((entry) => [entry.dancerId, entry]));
     const affectedDancers = state.dancers.filter((dancer) => entryMap.has(dancer.id));
     if (affectedDancers.length === 0) return false;
@@ -1004,14 +1233,7 @@
     const changed = commitDocumentEdit(label, () => {
       affectedDancers.forEach((dancer) => {
         const position = entryMap.get(dancer.id);
-        const existingFrame = dancer.keyframes.find((frame) => Math.abs(frame.time - state.currentTime) <= TIME_EPSILON);
-        const nextFrame = {
-          time: state.currentTime,
-          x: position.x,
-          y: position.y,
-        };
-        if (existingFrame?.hold === false) nextFrame.hold = false;
-        dancer.keyframes = upsertKeyframe(dancer.keyframes, nextFrame);
+        dancer.keyframes = upsertPositionKeyframe(dancer.keyframes, state.currentTime, position);
       });
     });
     if (changed) {
@@ -1129,6 +1351,7 @@
       name.maxLength = 80;
       name.autocomplete = "off";
       name.value = dancer.name;
+      name.disabled = Boolean(state.transitionEdit);
       name.setAttribute("aria-label", `Name for dancer ${dancer.number}`);
       name.title = "Edit dancer name";
       name.addEventListener("input", (event) => {
@@ -1161,6 +1384,7 @@
       removeButton.type = "button";
       removeButton.className = "remove-dancer";
       removeButton.textContent = "×";
+      removeButton.disabled = Boolean(state.transitionEdit);
       removeButton.setAttribute("aria-label", `Remove ${dancer.name}`);
       removeButton.addEventListener("click", () => removeDancer(dancer.id));
 
@@ -1268,11 +1492,15 @@
       const frameIdentity = frame.time.toFixed(3);
       const holdEvent = holdStartTimes.has(frameIdentity) ? "start" : holdEndTimes.has(frameIdentity) ? "end" : null;
       const displayedFrame = stageToDisplayPosition(frame, state.stageOrientation);
-      const dot = document.createElement("span");
+      const dot = document.createElement("button");
+      dot.type = "button";
       dot.className = "keyframe-dot";
       if (holdEvent) dot.classList.add(`is-hold-${holdEvent}`);
       dot.style.left = `${(frame.time / state.duration) * 100}%`;
       dot.dataset.keyframeTime = frame.time;
+      dot.setAttribute("aria-label", `Edit ${holdEvent === "start" ? "hold start" : holdEvent === "end" ? "hold end" : `${dancer.name} transition`} at ${formatTime(frame.time)}`);
+      dot.title = `Edit transition at ${formatTime(frame.time)}`;
+      dot.addEventListener("click", () => startTransitionEdit(dancer.id, frame.time));
       elements.keyframeTrack.append(dot);
 
       const chip = document.createElement("span");
@@ -1288,11 +1516,8 @@
       jump.dataset.dancerId = dancer.id;
       jump.dataset.keyframeIdentity = chip.dataset.keyframeIdentity;
       jump.textContent = `${holdEvent === "start" ? "Hold " : holdEvent === "end" ? "Resume " : ""}${formatTime(frame.time)}`;
-      jump.setAttribute("aria-label", `Go to ${holdEvent === "start" ? "hold start" : holdEvent === "end" ? "hold end" : `${dancer.name} position`} at ${formatTime(frame.time)}`);
-      jump.addEventListener("click", () => {
-        pausePlayback();
-        setCurrentTime(frame.time);
-      });
+      jump.setAttribute("aria-label", `Edit ${holdEvent === "start" ? "hold start" : holdEvent === "end" ? "hold end" : `${dancer.name} transition`} at ${formatTime(frame.time)}`);
+      jump.addEventListener("click", () => startTransitionEdit(dancer.id, frame.time));
 
       const remove = document.createElement("button");
       remove.type = "button";
@@ -1300,7 +1525,7 @@
       remove.dataset.dancerId = dancer.id;
       remove.dataset.keyframeIdentity = chip.dataset.keyframeIdentity;
       remove.textContent = "×";
-      remove.disabled = dancer.keyframes.length <= 1;
+      remove.disabled = dancer.keyframes.length <= 1 || Boolean(state.transitionEdit);
       remove.setAttribute("aria-label", `Delete position at ${formatTime(frame.time)}`);
       remove.addEventListener("click", () => removeKeyframe(dancer.id, frame.time));
       chip.append(jump, remove);
@@ -1318,6 +1543,10 @@
     document.querySelectorAll("[data-keyframe-time]").forEach((item) => {
       const isCurrent = activeTime !== null && Math.abs(Number(item.dataset.keyframeTime) - activeTime) <= TIME_EPSILON;
       item.classList.toggle("is-current", isCurrent);
+      if (item.classList.contains("keyframe-dot")) {
+        if (isCurrent) item.setAttribute("aria-current", "true");
+        else item.removeAttribute("aria-current");
+      }
       if (item.classList.contains("keyframe-chip")) {
         const jump = item.querySelector(".keyframe-jump");
         if (isCurrent) jump?.setAttribute("aria-current", "true");
@@ -1355,6 +1584,7 @@
   }
 
   async function startPlayback() {
+    if (!requireFinishedTransitionEdit()) return;
     if (state.isPlaying || state.isStartingPlayback) return;
     if (state.currentTime >= state.duration - 0.01) setCurrentTime(0);
 
@@ -1627,6 +1857,7 @@
   }
 
   function exportProject() {
+    if (!requireFinishedTransitionEdit()) return;
     const project = serializeProject();
     const payload = JSON.stringify(project, null, 2);
     downloadBlob(new Blob([payload], { type: "application/json" }), `${getSafeProjectFileName(project.projectTitle)}.formation.json`);
@@ -1645,6 +1876,7 @@
   }
 
   async function exportCompleteProject() {
+    if (!requireFinishedTransitionEdit()) return;
     const previousText = elements.exportPackageButton.textContent;
     elements.exportPackageButton.disabled = true;
     elements.exportPackageButton.textContent = "Packing…";
@@ -1784,6 +2016,7 @@
 
   async function importProject(file) {
     if (!file) return;
+    if (!requireFinishedTransitionEdit()) return;
     const previousText = elements.importButton.textContent;
     elements.importButton.disabled = true;
     elements.importButton.textContent = "Importing…";
@@ -1845,6 +2078,10 @@
   function flushSave() {
     clearTimeout(saveTimer);
     saveTimer = null;
+    if (state.transitionEdit) {
+      setSaveStatus("Transition preview not applied");
+      return false;
+    }
     if (state.storageWriteBlocked) {
       setSaveStatus("Autosave paused: stored plan is unreadable", true);
       return false;
@@ -1860,6 +2097,10 @@
   }
 
   function queueSave() {
+    if (state.transitionEdit) {
+      setSaveStatus("Transition preview not applied");
+      return;
+    }
     if (state.storageWriteBlocked) {
       setSaveStatus("Autosave paused: stored plan is unreadable", true);
       return;
@@ -1927,6 +2168,7 @@
     setCurrentTime(state.currentTime, { syncMedia: false });
     elements.totalTime.textContent = formatTime(state.duration);
     updateHistoryControls();
+    renderTransitionEditMode();
   }
 
   function seekToExactTime(value) {
@@ -2018,6 +2260,8 @@
     elements.themeToggle.addEventListener("click", toggleTheme);
     elements.undoButton.addEventListener("click", undoDocumentEdit);
     elements.redoButton.addEventListener("click", redoDocumentEdit);
+    elements.applyTransitionEditButton.addEventListener("click", applyTransitionEdit);
+    elements.cancelTransitionEditButton.addEventListener("click", cancelTransitionEdit);
     elements.playButton.addEventListener("click", togglePlayback);
     elements.restartButton.addEventListener("click", () => {
       pausePlayback();
@@ -2141,7 +2385,12 @@
       syncPendingTitleForExit();
       flushSave();
     });
-    window.addEventListener("beforeunload", () => {
+    window.addEventListener("beforeunload", (event) => {
+      if (isTransitionEditDirty()) {
+        event.preventDefault();
+        event.returnValue = "";
+        return;
+      }
       syncPendingTitleForExit();
       flushSave();
       pausePlayback();

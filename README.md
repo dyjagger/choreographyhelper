@@ -25,7 +25,7 @@ No dependency installation or backend is required.
 4. Move later in the timeline and drag the dancer again.
 5. Press play to see a straight-line movement between the positions.
 
-Use the **Go to** field or a recorded-position time to move the playhead to an exact second. Dancer names can be edited directly in the cast list. Undo and redo buttons cover formation edits, and Ctrl/Cmd+Z plus Ctrl/Cmd+Shift+Z work whenever focus is outside an input field.
+Use the **Go to** field to move the playhead to an exact second. Click a transition dot or recorded-position time to edit an existing transition. Moved dancers leave outlined markers at their original positions until you choose **Apply changes**; **Cancel** restores the original formation. An applied transition edit is one undoable action, even when several dancers change. Dancer names can be edited directly in the cast list. Undo and redo buttons cover formation edits, and Ctrl/Cmd+Z plus Ctrl/Cmd+Shift+Z work whenever focus is outside an input field.
 
 Use **New project** to permanently clear the choreography, loaded audio, and loaded video after a confirmation. Export anything you want to keep first.
 

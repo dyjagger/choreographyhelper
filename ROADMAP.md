@@ -161,3 +161,14 @@ Status: complete on the feature branch.
 - Show active holds on dancer markers and the timeline.
 - Keep freeform path drawing as the default and snap straight while Shift is held.
 - Keep version-one and version-two projects importable while exporting version three.
+
+## Milestone 8: Transactional transition editing
+
+Status: complete and approved for release in v0.3.0.
+
+- Make selected-dancer transition dots and recorded times directly editable.
+- Pause and lock timeline navigation while a transition edit is open.
+- Keep outlined markers at every changed dancer's original position.
+- Preview stage and coordinate changes without writing them to local autosave.
+- Apply all changed dancers as one undoable edit or cancel back to the original formation.
+- Preserve hold and resume metadata when their positions are edited.

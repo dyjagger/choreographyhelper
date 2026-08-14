@@ -629,10 +629,37 @@ input:focus-visible,
   font-size: 0.78rem;
 }
 
-.marker-layer {
+.marker-layer,
+.transition-ghost-layer {
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+.marker-layer {
+  z-index: 3;
+}
+
+.transition-ghost-layer {
+  z-index: 2;
+}
+
+.transition-position-ghost {
+  position: absolute;
+  display: grid;
+  width: clamp(38px, 3.2vw, 44px);
+  height: clamp(38px, 3.2vw, 44px);
+  place-items: center;
+  border: 3px dashed var(--marker-color);
+  border-radius: 50%;
+  color: var(--marker-color);
+  background: color-mix(in srgb, var(--marker-color) 10%, var(--stage-bg));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--marker-color) 16%, transparent);
+  font-size: clamp(0.68rem, 1vw, 0.82rem);
+  font-weight: 850;
+  line-height: 1;
+  opacity: 0.82;
+  transform: translate(-50%, -50%) scale(clamp(0.72, var(--stage-zoom), 1.45));
 }
 
 .dancer-marker {
@@ -668,6 +695,12 @@ input:focus-visible,
 
 .dancer-marker.is-primary {
   outline-color: var(--purple);
+}
+
+.dancer-marker.is-transition-draft {
+  box-shadow:
+    0 5px 14px color-mix(in srgb, var(--marker-color) 45%, transparent),
+    0 0 0 5px color-mix(in srgb, var(--purple) 26%, transparent);
 }
 
 .dancer-marker.is-holding::after {
@@ -791,11 +824,13 @@ input:focus-visible,
 .timeline-wrap {
   position: relative;
   margin: 21px 0 13px;
+  padding-top: 34px;
 }
 
 .timeline {
   position: relative;
   z-index: 2;
+  display: block;
   width: 100%;
   height: 6px;
   margin: 0;
@@ -804,7 +839,7 @@ input:focus-visible,
 
 .hold-track {
   position: absolute;
-  top: -10px;
+  top: 6px;
   right: 7px;
   left: 7px;
   z-index: 1;
@@ -846,29 +881,91 @@ input:focus-visible,
 
 .keyframe-track {
   position: absolute;
-  top: -2px;
+  top: 0;
   right: 7px;
   left: 7px;
-  height: 6px;
+  z-index: 3;
+  height: 20px;
   pointer-events: none;
 }
 
 .keyframe-dot {
   position: absolute;
   top: 50%;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+.keyframe-dot::before {
   width: 8px;
   height: 8px;
   border: 2px solid var(--stage-bg);
   border-radius: 50%;
   background: var(--keyframe-dot);
   box-shadow: 0 0 0 1px var(--keyframe-dot-ring);
-  transform: translate(-50%, -50%);
+  content: "";
 }
 
-.keyframe-dot.is-hold-start,
-.keyframe-dot.is-hold-end {
+.keyframe-dot:hover::before,
+.keyframe-dot:focus-visible::before,
+.keyframe-dot.is-current::before {
+  width: 11px;
+  height: 11px;
+  background: var(--purple);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--purple) 24%, transparent);
+}
+
+.keyframe-dot.is-hold-start::before,
+.keyframe-dot.is-hold-end::before {
   background: var(--purple);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--purple) 28%, transparent);
+}
+
+.transition-edit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 8px 0 13px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--purple) 48%, var(--line));
+  border-radius: 12px;
+  background: var(--purple-soft);
+}
+
+.transition-edit-bar > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.transition-edit-bar strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.transition-edit-bar span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.transition-edit-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.transition-edit-actions .button {
+  min-height: 38px;
+  white-space: nowrap;
 }
 
 .selected-summary {
@@ -1359,6 +1456,19 @@ input:focus-visible,
 }
 
 @media (max-width: 960px) {
+  .transition-edit-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .transition-edit-actions {
+    width: 100%;
+  }
+
+  .transition-edit-actions .button {
+    flex: 1 1 0;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
   }
@@ -1553,7 +1663,7 @@ input:focus-visible,
   }
 
   .keyframe-track {
-    top: 11px;
+    top: 0;
   }
 
   .selected-summary {
@@ -1676,13 +1786,23 @@ input:focus-visible,
     padding-bottom: 3px;
   }
 
+  .keyframe-dot {
+    width: 44px;
+    height: 44px;
+  }
+
+  .timeline-wrap {
+    padding-top: 50px;
+  }
+
   .volume-control input,
   .timeline {
     min-height: 34px;
   }
 
   .keyframe-track {
-    top: 12px;
+    top: 0;
+    height: 28px;
   }
 }
 
