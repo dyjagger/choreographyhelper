@@ -65,7 +65,7 @@
                 </div>
                 <div class="stage-zoom-control" role="group" aria-label="Stage zoom">
                   <button id="zoom-out-button" type="button" aria-label="Zoom out">−</button>
-                  <button id="zoom-reset-button" type="button" aria-label="Reset stage zoom to 100 percent">
+                  <button id="zoom-reset-button" type="button" aria-label="Fit the entire stage at 100 percent">
                     <span id="zoom-level">100%</span>
                   </button>
                   <button id="zoom-in-button" type="button" aria-label="Zoom in">＋</button>
@@ -96,9 +96,34 @@
                 <span aria-hidden="true">〰</span>
                 Align to path
               </button>
+              <button id="stage-size-button" class="stage-action-button" type="button">
+                <span aria-hidden="true">↔</span>
+                <span id="stage-size-label">Stage size · 1× W × 1× D</span>
+              </button>
               <span class="formation-path-hint">Hold Shift to snap</span>
               <span id="selection-count" class="stage-selection-count" aria-live="polite">0 selected</span>
             </div>
+
+            <section id="stage-size-edit-bar" class="stage-size-edit-bar is-hidden" aria-labelledby="stage-size-edit-title">
+              <div class="stage-size-edit-content">
+                <strong id="stage-size-edit-title">Change stage size</strong>
+                <span id="stage-size-edit-detail">Added depth extends behind the dancers; added width grows equally on both sides.</span>
+                <div class="stage-size-fields">
+                  <label for="stage-width-input">Width <input id="stage-width-input" type="number" min="1" max="4" step="0.25" inputmode="decimal" /> ×</label>
+                  <label for="stage-depth-input">Depth <input id="stage-depth-input" type="number" min="1" max="4" step="0.25" inputmode="decimal" /> ×</label>
+                </div>
+                <fieldset class="stage-resize-modes">
+                  <legend>Existing formations</legend>
+                  <label><input type="radio" name="stage-resize-mode" value="keep-spacing" checked /> Keep formation spacing</label>
+                  <label><input type="radio" name="stage-resize-mode" value="stretch" /> Stretch to fill stage</label>
+                </fieldset>
+                <span id="stage-size-edit-error" class="stage-size-edit-error" role="alert"></span>
+              </div>
+              <div class="stage-size-edit-actions">
+                <button id="cancel-stage-size-button" class="button button-quiet" type="button">Cancel</button>
+                <button id="apply-stage-size-button" class="button button-primary" type="button" disabled>Apply stage size</button>
+              </div>
+            </section>
 
             <div
               id="stage-viewport"
@@ -107,6 +132,10 @@
               aria-label="Choreography stage"
               aria-describedby="stage-instructions"
             >
+              <div id="stage-surface-extent" class="stage-surface-extent" aria-hidden="true"></div>
+              <div id="stage-size-original-outline" class="stage-size-original-outline is-hidden" aria-hidden="true">
+                <span>Original stage</span>
+              </div>
               <div id="stage" class="stage">
                 <div class="stage-grid" aria-hidden="true"></div>
                 <div class="stage-centre-line" aria-hidden="true"></div>
@@ -326,6 +355,7 @@
               <li>Move the timeline to the desired time.</li>
               <li>Drag the dancer. Dropping it records that position.</li>
               <li>Add another position later, then press play.</li>
+              <li>Choose Stage size to add width or depth. Preview with Keep spacing or Stretch, then apply or cancel.</li>
               <li>Click a transition dot or recorded time to preview edits, then apply or cancel them.</li>
               <li>Click a dotted hold range, Hold chip, or Resume chip to edit its timing. Apply saves the edit; Cancel discards it.</li>
               <li>Moving Resume earlier keeps the later formation as the destination, so the dancer moves there instead of teleporting.</li>

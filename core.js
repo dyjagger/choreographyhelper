@@ -9,6 +9,8 @@
   const MAX_TOTAL_KEYFRAMES = 50000;
   const STAGE_ORIENTATION_FRONT_BOTTOM = "front-bottom";
   const STAGE_ORIENTATION_FRONT_TOP = "front-top";
+  const MIN_STAGE_SIZE = 1;
+  const MAX_STAGE_SIZE = 4;
   const DEFAULT_STAGE_BOUNDS = Object.freeze({ minX: 2.5, maxX: 97.5, minY: 4, maxY: 96 });
 
   function clamp(value, minimum, maximum) {
@@ -23,6 +25,86 @@
     return value === STAGE_ORIENTATION_FRONT_TOP
       ? STAGE_ORIENTATION_FRONT_TOP
       : STAGE_ORIENTATION_FRONT_BOTTOM;
+  }
+
+  function normalizeStageSize(value, fallback = 1) {
+    const numericValue = Number(value);
+    const safeFallback = Number.isFinite(Number(fallback)) ? Number(fallback) : 1;
+    const normalized = Number.isFinite(numericValue) ? numericValue : safeFallback;
+    return Math.round(clamp(normalized, MIN_STAGE_SIZE, MAX_STAGE_SIZE) * 1000) / 1000;
+  }
+
+  function normalizeStageDimensions(dimensions = {}) {
+    return {
+      width: normalizeStageSize(dimensions.width),
+      depth: normalizeStageSize(dimensions.depth),
+    };
+  }
+
+  function getStageBoundsForDimensions(dimensions = {}) {
+    const { width, depth } = normalizeStageDimensions(dimensions);
+    return {
+      minX: 50 - 47.5 / width,
+      maxX: 50 + 47.5 / width,
+      minY: 4 / depth,
+      maxY: 100 - 4 / depth,
+    };
+  }
+
+  function roundResizedCoordinate(value) {
+    return Math.round(Number(value) * 1000) / 1000;
+  }
+
+  function resizeStagePosition(position, originalDimensions, nextDimensions, mode = "keep-spacing") {
+    const source = normalizeStageDimensions(originalDimensions);
+    const target = normalizeStageDimensions(nextDimensions);
+    const x = Number(position?.x);
+    const y = Number(position?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (mode === "stretch") return { x: roundResizedCoordinate(x), y: roundResizedCoordinate(y) };
+    return {
+      x: roundResizedCoordinate(50 + (x - 50) * (source.width / target.width)),
+      y: roundResizedCoordinate(100 - (100 - y) * (source.depth / target.depth)),
+    };
+  }
+
+  function resizeStageDancers(dancers, originalDimensions, nextDimensions, mode = "keep-spacing") {
+    const safeDancers = Array.isArray(dancers) ? dancers : [];
+    const source = normalizeStageDimensions(originalDimensions);
+    const target = normalizeStageDimensions(nextDimensions);
+    const safeBounds = getStageBoundsForDimensions(target);
+    const bounds = {
+      minX: target.width < source.width ? safeBounds.minX : 0,
+      maxX: target.width < source.width ? safeBounds.maxX : 100,
+      minY: target.depth < source.depth ? safeBounds.minY : 0,
+      maxY: target.depth < source.depth ? safeBounds.maxY : 100,
+    };
+    const resizedDancers = [];
+    for (const dancer of safeDancers) {
+      const resizedFrames = [];
+      for (const frame of Array.isArray(dancer?.keyframes) ? dancer.keyframes : []) {
+        const position = resizeStagePosition(frame, originalDimensions, nextDimensions, mode);
+        if (!position) return { ok: false, reason: "invalid-position", dancerId: dancer?.id, time: frame?.time };
+        if (
+          mode !== "stretch" &&
+          (position.x < bounds.minX - POSITION_EPSILON || position.x > bounds.maxX + POSITION_EPSILON ||
+            position.y < bounds.minY - POSITION_EPSILON || position.y > bounds.maxY + POSITION_EPSILON)
+        ) {
+          return {
+            ok: false,
+            reason: "outside-stage",
+            dancerId: dancer?.id,
+            dancerName: dancer?.name,
+            time: Number(frame?.time),
+            position,
+            bounds,
+          };
+        }
+        resizedFrames.push({ ...frame, x: position.x, y: position.y });
+      }
+      resizedDancers.push({ ...dancer, keyframes: resizedFrames });
+    }
+    return { ok: true, dancers: resizedDancers };
   }
 
   function stageToDisplayPosition(position, orientation = STAGE_ORIENTATION_FRONT_BOTTOM) {
@@ -597,7 +679,15 @@
   function isValidProjectData(candidate, maxDancers = 50) {
     if (!candidate || typeof candidate !== "object") return false;
     if (!Array.isArray(candidate.dancers) || candidate.dancers.length > maxDancers) return false;
-    if (candidate.version !== undefined && ![1, 2, 3].includes(Number(candidate.version))) return false;
+    if (candidate.version !== undefined && ![1, 2, 3, 4].includes(Number(candidate.version))) return false;
+    for (const sizeKey of ["stageWidth", "stageDepth"]) {
+      if (
+        candidate[sizeKey] !== undefined &&
+        (!Number.isFinite(Number(candidate[sizeKey])) ||
+          Number(candidate[sizeKey]) < MIN_STAGE_SIZE || Number(candidate[sizeKey]) > MAX_STAGE_SIZE)
+      ) return false;
+    }
+    if (Number(candidate.version) === 4 && (candidate.stageWidth === undefined || candidate.stageDepth === undefined)) return false;
     if (
       candidate.stageOrientation !== undefined &&
       ![STAGE_ORIENTATION_FRONT_BOTTOM, STAGE_ORIENTATION_FRONT_TOP].includes(candidate.stageOrientation)
@@ -669,6 +759,8 @@
     MAX_DANCER_COUNTER,
     MAX_DANCER_ID_LENGTH,
     MAX_TOTAL_KEYFRAMES,
+    MAX_STAGE_SIZE,
+    MIN_STAGE_SIZE,
     TIME_EPSILON,
     STAGE_ORIENTATION_FRONT_BOTTOM,
     STAGE_ORIENTATION_FRONT_TOP,
@@ -693,6 +785,7 @@
     normalizeKeyframes,
     normalizeDancerName,
     normalizeStageOrientation,
+    normalizeStageSize,
     normalizeTimelineViewport,
     normalizeProjectTitle,
     orderPositionsAlongPath,
@@ -705,6 +798,9 @@
     stageToDisplayPosition,
     timeToTimelinePercent,
     retimeHoldInterval,
+    resizeStageDancers,
+    resizeStagePosition,
+    getStageBoundsForDimensions,
     undoHistory,
     upsertKeyframe,
     upsertPositionKeyframe,

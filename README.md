@@ -31,7 +31,9 @@ Use **New project** to permanently clear the choreography, loaded audio, and loa
 
 Up to 50 dancers are supported. Edit dancer names directly in the cast list. Unnamed dancers use their number on the stage; named dancers use the first two characters of their name, such as `Ma` for Maya. The front of the stage can be shown at the top or bottom without rewriting saved keyframes.
 
-Use the `−`, `100%`, and `+` controls, the mouse wheel, or a two-finger pinch to zoom the stage from 100% to 300%. Pinch movement also pans the zoomed view.
+Choose **Stage size** to change width and depth independently from 1× to 4×. **Keep formation spacing** preserves the dancers' real spacing while width grows equally on both sides and depth is added behind the current stage; **Stretch to fill stage** keeps their percentage positions instead. The dashed outline shows the original boundary during the preview. Apply makes the whole resize one undoable edit, while Cancel restores the original stage and formations. A reduction that cannot contain an existing formation is blocked in Keep spacing mode.
+
+Use the `−`, `100%`, and `+` controls, the mouse wheel, or a two-finger pinch to zoom the stage from 100% to 300%. At 100%, the complete stage fits in the viewport regardless of its width and depth; dancer markers, original-position outlines, and formation previews scale with that fitted stage. Zoom in for larger editing targets and detailed scrolling. Pinch movement also pans the zoomed view.
 
 Use modifier-click or a desktop selection rectangle to select several dancers. On touch screens, tap dancers to add or remove them from the selection. **Select all** and **Clear** provide quick selection controls. Dragging any selected dancer or pressing an arrow key moves the selected formation as one rigid group and records one undoable edit at the current playhead time.
 
@@ -41,7 +43,7 @@ Use the mouse wheel over the timeline to zoom around the pointer. Hold Shift whi
 
 Select two or more dancers and activate **Align to path** to draw a freeform curve. Hold Shift while dragging to snap the path to a perfectly straight line. Labeled ghost markers preview the result before the dancers are evenly placed along the path.
 
-Audio and video remain local to the device. **Export JSON** creates a portable choreography-only plan. **Export complete** creates a validated `.formation` package containing the choreography, volume settings, audio, and video. Complete web packages are bounded to 1 GB. Import accepts both formats; JSON import keeps currently loaded media, while complete-project import replaces it with the packaged media. Music and video have independent volume controls. The app starts in dark mode and remembers any later theme choice in that browser.
+Audio and video remain local to the device. **Export JSON** creates a portable choreography-only plan. **Export complete** creates a validated `.formation` package containing the choreography, stage dimensions, volume settings, audio, and video. Complete web packages are bounded to 1 GB. Import accepts both formats; JSON import keeps currently loaded media, while complete-project import replaces it with the packaged media. Version 4 projects save stage dimensions; older version 1–3 projects remain supported and open at 1× width and 1× depth. Music and video have independent volume controls. The app starts in dark mode and remembers any later theme choice in that browser.
 
 The interface adapts automatically to narrow screens and touch input. Mobile layouts use larger touch targets, reorganized transport controls, a cast-first side panel, and stage scrolling that remains available outside draggable dancer markers.
 
