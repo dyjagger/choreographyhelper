@@ -509,7 +509,9 @@ input:focus-visible,
 }
 
 .stage {
-  --stage-zoom: 1;
+  --stage-display-scale: 1;
+  --stage-grid-column-size: 10%;
+  --stage-grid-row-size: 10%;
   position: absolute;
   overflow: hidden;
   border: 1px solid var(--stage-border);
@@ -527,8 +529,129 @@ input:focus-visible,
   background-image:
     linear-gradient(to right, var(--stage-grid) 1px, transparent 1px),
     linear-gradient(to bottom, var(--stage-grid) 1px, transparent 1px);
-  background-size: 10% 10%;
+  background-size: var(--stage-grid-column-size) var(--stage-grid-row-size);
   pointer-events: none;
+}
+
+.stage-surface-extent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.stage-size-original-outline {
+  position: absolute;
+  z-index: 8;
+  border: 2px dashed color-mix(in srgb, var(--purple) 72%, transparent);
+  border-radius: 11px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stage-bg) 75%, transparent);
+  pointer-events: none;
+}
+
+.stage-size-original-outline span {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--purple);
+  background: color-mix(in srgb, var(--stage-bg) 88%, transparent);
+  font-size: 0.63rem;
+  font-weight: 800;
+}
+
+.stage-size-edit-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin: -2px 0 12px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--purple) 48%, var(--line));
+  border-radius: 12px;
+  background: var(--purple-soft);
+}
+
+.stage-size-edit-content {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 7px;
+}
+
+.stage-size-edit-content > strong {
+  color: var(--ink);
+  font-size: 0.84rem;
+}
+
+.stage-size-edit-content > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.stage-size-fields,
+.stage-resize-modes,
+.stage-size-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stage-size-fields label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--quiet-ink);
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
+.stage-size-fields input {
+  width: 72px;
+  min-height: 34px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--field-bg);
+  font: inherit;
+}
+
+.stage-resize-modes {
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--quiet-ink);
+  font-size: 0.72rem;
+}
+
+.stage-resize-modes legend {
+  float: left;
+  margin-right: 2px;
+  font-weight: 800;
+}
+
+.stage-resize-modes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 700;
+}
+
+.stage-size-edit-actions {
+  flex: 0 0 auto;
+}
+
+.stage-size-edit-actions .button {
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.stage-size-edit-error:not(:empty) {
+  color: var(--danger);
+  font-weight: 760;
 }
 
 .stage-centre-line {
@@ -606,7 +729,7 @@ input:focus-visible,
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--marker-color) 28%, transparent);
   font-size: 0.68rem;
   font-weight: 850;
-  transform: translate(-50%, -50%) scale(clamp(0.72, var(--stage-zoom), 1.45));
+  transform: translate(-50%, -50%) scale(clamp(0.25, var(--stage-display-scale), 1.45));
 }
 
 .empty-stage {
@@ -659,7 +782,7 @@ input:focus-visible,
   font-weight: 850;
   line-height: 1;
   opacity: 0.82;
-  transform: translate(-50%, -50%) scale(clamp(0.72, var(--stage-zoom), 1.45));
+  transform: translate(-50%, -50%) scale(clamp(0.25, var(--stage-display-scale), 1.45));
 }
 
 .dancer-marker {
@@ -677,7 +800,7 @@ input:focus-visible,
   font-size: clamp(0.68rem, 1vw, 0.82rem);
   font-weight: 850;
   line-height: 1;
-  transform: translate(-50%, -50%) scale(clamp(0.72, var(--stage-zoom), 1.45));
+  transform: translate(-50%, -50%) scale(clamp(0.25, var(--stage-display-scale), 1.45));
   user-select: none;
   touch-action: none;
   pointer-events: auto;
@@ -1580,6 +1703,19 @@ input:focus-visible,
 }
 
 @media (max-width: 960px) {
+  .stage-size-edit-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stage-size-edit-actions {
+    width: 100%;
+  }
+
+  .stage-size-edit-actions .button {
+    flex: 1 1 0;
+  }
+
   .transition-edit-bar {
     align-items: stretch;
     flex-direction: column;

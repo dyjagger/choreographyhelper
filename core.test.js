@@ -21,11 +21,13 @@ const {
   getLatestKeyframeTime,
   getPolylineLength,
   getPositionAtTime,
+  getStageBoundsForDimensions,
   getNextAvailableDancerNumber,
   hasPointerMoved,
   isValidProjectData,
   normalizeDancerName,
   normalizeStageOrientation,
+  normalizeStageSize,
   normalizeTimelineViewport,
   normalizeProjectTitle,
   normalizeKeyframes,
@@ -35,6 +37,8 @@ const {
   pushHistory,
   redoHistory,
   retimeHoldInterval,
+  resizeStageDancers,
+  resizeStagePosition,
   samplePolyline,
   shouldPauseAfterPlaybackStartSettles,
   stageToDisplayPosition,
@@ -51,6 +55,70 @@ test("stage orientation mirrors only the vertical coordinate and round-trips", (
   assert.deepEqual(stageToDisplayPosition(stored, "front-top"), { x: 22.25, y: 15.25 });
   assert.deepEqual(displayToStagePosition({ x: 22.25, y: 15.25 }, "front-top"), stored);
   assert.equal(normalizeStageOrientation("unexpected"), "front-bottom");
+});
+
+test("stage dimensions normalize and calculate constant physical marker margins", () => {
+  assert.equal(normalizeStageSize(2.5), 2.5);
+  assert.equal(normalizeStageSize(0), 1);
+  assert.equal(normalizeStageSize(9), 4);
+  assert.deepEqual(getStageBoundsForDimensions({ width: 2, depth: 2 }), {
+    minX: 26.25,
+    maxX: 73.75,
+    minY: 2,
+    maxY: 98,
+  });
+});
+
+test("keeping formation spacing grows behind the stage and equally across its sides", () => {
+  assert.deepEqual(
+    resizeStagePosition({ x: 20, y: 20 }, { width: 1, depth: 1 }, { width: 2, depth: 2 }),
+    { x: 35, y: 60 },
+  );
+  assert.deepEqual(
+    resizeStagePosition({ x: 50, y: 96 }, { width: 1, depth: 1 }, { width: 2, depth: 2 }),
+    { x: 50, y: 98 },
+  );
+});
+
+test("stretching a resized stage preserves normalized positions", () => {
+  assert.deepEqual(
+    resizeStagePosition({ x: 20, y: 20 }, { width: 1, depth: 1 }, { width: 3, depth: 2 }, "stretch"),
+    { x: 20, y: 20 },
+  );
+});
+
+test("stage resizing preserves keyframe metadata and blocks formations that cannot fit", () => {
+  const dancer = {
+    id: "dancer-1",
+    name: "Maya",
+    keyframes: [
+      { time: 0, x: 50, y: 2, hold: true },
+      { time: 10, x: 50, y: 98, hold: false },
+    ],
+  };
+  const tooSmall = resizeStageDancers([dancer], { width: 1, depth: 3 }, { width: 1, depth: 1 });
+  assert.equal(tooSmall.ok, false);
+  assert.equal(tooSmall.reason, "outside-stage");
+  assert.equal(tooSmall.dancerId, "dancer-1");
+
+  const standardDancer = {
+    ...dancer,
+    keyframes: [
+      { time: 0, x: 50, y: 4, hold: true },
+      { time: 10, x: 50, y: 96, hold: false },
+    ],
+  };
+  const expanded = resizeStageDancers([standardDancer], { width: 1, depth: 1 }, { width: 1, depth: 2 });
+  assert.equal(expanded.ok, true);
+  assert.equal(expanded.dancers[0].keyframes[0].hold, true);
+  assert.equal(expanded.dancers[0].keyframes[1].hold, false);
+  assert.deepEqual(expanded.dancers[0].keyframes.map(({ x, y }) => ({ x, y })), [
+    { x: 50, y: 52 },
+    { x: 50, y: 98 },
+  ]);
+  assert.equal(resizeStageDancers([
+    { id: "edge", keyframes: [{ time: 0, x: 50, y: 100 }] },
+  ], { width: 1, depth: 1 }, { width: 1, depth: 2 }).ok, true);
 });
 
 test("stage marker labels use a name prefix and retain numbers for unnamed dancers", () => {
@@ -561,4 +629,13 @@ test("versioned projects accept supported presentation and hold fields", () => {
     version: 3,
     dancers: [{ id: "bad-hold", keyframes: [{ time: 0, x: 50, y: 50, hold: "yes" }] }],
   }), false);
+  assert.equal(isValidProjectData({
+    ...base,
+    version: 4,
+    stageWidth: 1.5,
+    stageDepth: 3,
+  }), true);
+  assert.equal(isValidProjectData({ ...base, version: 4, stageWidth: 1.5 }), false);
+  assert.equal(isValidProjectData({ ...base, version: 4, stageWidth: 0.5, stageDepth: 1 }), false);
+  assert.equal(isValidProjectData({ ...base, version: 3 }), true);
 });

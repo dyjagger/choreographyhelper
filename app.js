@@ -18,6 +18,7 @@
     getPolylineLength,
     getNextAvailableDancerNumber,
     getPositionAtTime,
+    getStageBoundsForDimensions,
     hasPointerMoved,
     isValidProjectData,
     normalizeDancerName,
@@ -30,6 +31,7 @@
     pushHistory,
     redoHistory,
     retimeHoldInterval,
+    resizeStageDancers,
     samplePolyline,
     shouldPauseAfterPlaybackStartSettles,
     undoHistory,
@@ -37,6 +39,7 @@
     upsertPositionKeyframe,
     displayToStagePosition,
     normalizeStageOrientation,
+    normalizeStageSize,
     stageToDisplayPosition,
     timeToTimelinePercent,
     zoomTimelineViewport,
@@ -72,6 +75,7 @@
     addDancerButton: document.querySelector("#add-dancer-button"),
     addDancerForm: document.querySelector("#add-dancer-form"),
     applyHoldEditButton: document.querySelector("#apply-hold-edit-button"),
+    applyStageSizeButton: document.querySelector("#apply-stage-size-button"),
     applyTransitionEditButton: document.querySelector("#apply-transition-edit-button"),
     audioFileButton: document.querySelector("#audio-file-button"),
     audioDetails: document.querySelector("#audio-details"),
@@ -80,6 +84,7 @@
     audioName: document.querySelector("#audio-name"),
     audioPlayer: document.querySelector("#audio-player"),
     cancelHoldEditButton: document.querySelector("#cancel-hold-edit-button"),
+    cancelStageSizeButton: document.querySelector("#cancel-stage-size-button"),
     currentTime: document.querySelector("#current-time"),
     cancelTransitionEditButton: document.querySelector("#cancel-transition-edit-button"),
     clearSelectionButton: document.querySelector("#clear-selection-button"),
@@ -128,8 +133,18 @@
     selectionMarquee: document.querySelector("#selection-marquee"),
     selectionText: document.querySelector("#selection-text"),
     stage: document.querySelector("#stage"),
+    stageDepthInput: document.querySelector("#stage-depth-input"),
     stageInstructions: document.querySelector("#stage-instructions"),
+    stageResizeModeInputs: [...document.querySelectorAll('input[name="stage-resize-mode"]')],
+    stageSizeButton: document.querySelector("#stage-size-button"),
+    stageSizeEditBar: document.querySelector("#stage-size-edit-bar"),
+    stageSizeEditDetail: document.querySelector("#stage-size-edit-detail"),
+    stageSizeEditError: document.querySelector("#stage-size-edit-error"),
+    stageSizeLabel: document.querySelector("#stage-size-label"),
+    stageSizeOriginalOutline: document.querySelector("#stage-size-original-outline"),
+    stageSurfaceExtent: document.querySelector("#stage-surface-extent"),
     stageViewport: document.querySelector("#stage-viewport"),
+    stageWidthInput: document.querySelector("#stage-width-input"),
     audiencePositionLabel: document.querySelector("#audience-position-label"),
     timeline: document.querySelector("#timeline"),
     timelineFitButton: document.querySelector("#timeline-fit-button"),
@@ -188,7 +203,10 @@
     rafId: null,
     selectedDancerId: null,
     selectedDancerIds: [],
+    stageDepth: 1,
     stageOrientation: "front-bottom",
+    stageSizeEdit: null,
+    stageWidth: 1,
     stageZoom: 1,
     storageWriteBlocked: false,
     timelineViewport: { start: 0, end: 60 },
@@ -264,7 +282,7 @@
   }
 
   function isDocumentEditOpen() {
-    return Boolean(state.transitionEdit || state.holdEdit);
+    return Boolean(state.transitionEdit || state.holdEdit || state.stageSizeEdit);
   }
 
   function isTransitionEditDirty() {
@@ -277,8 +295,27 @@
     return Boolean(dancer && JSON.stringify(normalizeKeyframes(dancer.keyframes)) !== JSON.stringify(edit.originalKeyframes));
   }
 
+  function isStageSizeEditDirty() {
+    const edit = state.stageSizeEdit;
+    return Boolean(edit && edit.valid && (
+      Math.abs(edit.draftWidth - edit.originalWidth) > 0.0001 ||
+      Math.abs(edit.draftDepth - edit.originalDepth) > 0.0001
+    ));
+  }
+
+  function getDocumentEditSaveMessage() {
+    if (state.stageSizeEdit) return "Stage size preview not applied";
+    if (state.holdEdit) return "Hold timing preview not applied";
+    return "Transition preview not applied";
+  }
+
   function requireFinishedTransitionEdit() {
     if (!isDocumentEditOpen()) return true;
+    if (state.stageSizeEdit) {
+      showToast("Apply or cancel the stage size edit first.");
+      elements.applyStageSizeButton.focus();
+      return false;
+    }
     if (state.holdEdit) {
       showToast("Apply or cancel the hold edit first.");
       elements.applyHoldEditButton.focus();
@@ -318,6 +355,8 @@
     elements.stage.classList.toggle("is-transition-editing", isEditing);
     elements.stageInstructions.textContent = edit
       ? "Move dancers to preview this transition. Outlines show their original positions."
+      : state.stageSizeEdit
+        ? "Previewing the resized stage. The dashed outline shows the original boundary."
       : state.holdEdit
         ? "Adjust the hold times below. The formation remains unchanged until you apply."
         : "Select a time, then drag a dancer to record a position.";
@@ -349,6 +388,7 @@
       elements.removeVideoButton,
       elements.videoVolumeInput,
       elements.newDancerNameInput,
+      elements.stageSizeButton,
     ];
     alwaysUnlocked.forEach((control) => {
       control.disabled = isEditing;
@@ -373,8 +413,10 @@
         ? "Preview this position, then apply the transition changes"
         : edit
           ? "End this dancer's earlier hold before changing this transition"
-          : "Apply or cancel the hold timing edit first";
-      if (state.holdEdit) {
+          : state.stageSizeEdit
+            ? "Apply or cancel the stage size edit first"
+            : "Apply or cancel the hold timing edit first";
+      if (state.holdEdit || state.stageSizeEdit) {
         elements.selectAllButton.disabled = true;
         elements.clearSelectionButton.disabled = true;
         elements.formationPathButton.disabled = true;
@@ -382,12 +424,13 @@
     }
     renderTransitionGhosts();
     renderHoldEditMode();
+    renderStageSizeEditMode();
   }
 
   function startTransitionEdit(dancerId, frameTime) {
     const dancer = state.dancers.find((candidate) => candidate.id === dancerId);
     if (!dancer) return;
-    if (state.holdEdit) {
+    if (state.holdEdit || state.stageSizeEdit) {
       requireFinishedTransitionEdit();
       return;
     }
@@ -508,6 +551,129 @@
     state.markerElements.get(edit.sourceDancerId)?.focus();
   }
 
+  function formatStageSize(value) {
+    return Number.isInteger(Number(value)) ? String(Number(value)) : String(Math.round(Number(value) * 100) / 100);
+  }
+
+  function renderStageSizeEditMode() {
+    const edit = state.stageSizeEdit;
+    elements.stageSizeEditBar.classList.toggle("is-hidden", !edit);
+    elements.stageSizeOriginalOutline.classList.toggle("is-hidden", !edit);
+    elements.stageSizeLabel.textContent = `Stage size · ${formatStageSize(state.stageWidth)}× W × ${formatStageSize(state.stageDepth)}× D`;
+    if (!edit) return;
+
+    if (document.activeElement !== elements.stageWidthInput) {
+      elements.stageWidthInput.value = formatStageSize(edit.draftWidth);
+    }
+    if (document.activeElement !== elements.stageDepthInput) {
+      elements.stageDepthInput.value = formatStageSize(edit.draftDepth);
+    }
+    elements.stageResizeModeInputs.forEach((input) => {
+      input.checked = input.value === edit.mode;
+    });
+    elements.stageSizeEditDetail.textContent = edit.mode === "stretch"
+      ? "Stretch keeps every dancer at the same percentage of the stage, so formations expand or contract with it."
+      : "Keep spacing preserves real distances. Added depth extends behind the dancers and width grows equally on both sides.";
+    elements.stageSizeEditError.textContent = edit.error || "";
+    elements.applyStageSizeButton.disabled = !isStageSizeEditDirty();
+  }
+
+  function getStageSizeEditError(result) {
+    if (result?.reason === "outside-stage") {
+      const dancerName = result.dancerName || "A dancer";
+      const time = Number.isFinite(result.time) ? ` at ${formatTime(result.time)}` : "";
+      return `${dancerName}'s position${time} will not fit. Increase the stage or choose Stretch to fill stage.`;
+    }
+    return "Enter width and depth values from 1 to 4.";
+  }
+
+  function previewStageSizeEdit() {
+    const edit = state.stageSizeEdit;
+    if (!edit) return;
+    const width = Number(elements.stageWidthInput.value);
+    const depth = Number(elements.stageDepthInput.value);
+    const mode = elements.stageResizeModeInputs.find((input) => input.checked)?.value || edit.mode;
+    const dimensionsAreValid = Number.isFinite(width) && width >= 1 && width <= 4 &&
+      Number.isFinite(depth) && depth >= 1 && depth <= 4;
+
+    replaceDocumentData(edit.beforeSnapshot.project, edit.beforeSnapshot);
+    edit.mode = mode === "stretch" ? "stretch" : "keep-spacing";
+    if (!dimensionsAreValid) {
+      edit.valid = false;
+      edit.error = getStageSizeEditError();
+      renderAll();
+      focusStageFront();
+      setSaveStatus(getDocumentEditSaveMessage());
+      return;
+    }
+
+    edit.draftWidth = normalizeStageSize(width);
+    edit.draftDepth = normalizeStageSize(depth);
+    state.stageWidth = edit.draftWidth;
+    state.stageDepth = edit.draftDepth;
+    const result = resizeStageDancers(
+      edit.beforeSnapshot.project.dancers,
+      { width: edit.originalWidth, depth: edit.originalDepth },
+      { width: edit.draftWidth, depth: edit.draftDepth },
+      edit.mode,
+    );
+    edit.valid = result.ok;
+    edit.error = result.ok ? "" : getStageSizeEditError(result);
+    if (result.ok) state.dancers = result.dancers;
+    renderAll();
+    focusStageFront();
+    setSaveStatus(getDocumentEditSaveMessage());
+  }
+
+  function startStageSizeEdit() {
+    if (!requireFinishedTransitionEdit()) return;
+    pausePlayback();
+    const beforeSnapshot = captureDocumentSnapshot();
+    state.stageSizeEdit = {
+      beforeSnapshot,
+      originalWidth: state.stageWidth,
+      originalDepth: state.stageDepth,
+      draftWidth: state.stageWidth,
+      draftDepth: state.stageDepth,
+      mode: "keep-spacing",
+      valid: true,
+      error: "",
+    };
+    renderAll();
+    focusStageFront();
+    setSaveStatus(getDocumentEditSaveMessage());
+    requestAnimationFrame(() => elements.stageDepthInput.focus());
+  }
+
+  function applyStageSizeEdit() {
+    const edit = state.stageSizeEdit;
+    if (!edit || !isStageSizeEditDirty()) return;
+    const width = edit.draftWidth;
+    const depth = edit.draftDepth;
+    state.stageSizeEdit = null;
+    const changed = commitDocumentEdit(
+      `resize stage to ${formatStageSize(width)}× wide by ${formatStageSize(depth)}× deep`,
+      () => {},
+      { beforeSnapshot: edit.beforeSnapshot },
+    );
+    if (changed) {
+      showToast(`Stage resized to ${formatStageSize(width)}× wide by ${formatStageSize(depth)}× deep.`);
+      elements.stageSizeButton.focus();
+    }
+  }
+
+  function cancelStageSizeEdit(options = {}) {
+    const edit = state.stageSizeEdit;
+    if (!edit) return;
+    const wasDirty = isStageSizeEditDirty();
+    state.stageSizeEdit = null;
+    replaceDocumentData(edit.beforeSnapshot.project, edit.beforeSnapshot);
+    renderAll();
+    setSaveStatus("Saved locally");
+    if (options.announce !== false) showToast(wasDirty ? "Stage size changes discarded." : "Stage size editing closed.");
+    elements.stageSizeButton.focus();
+  }
+
   function renderHoldEditMode() {
     const edit = state.holdEdit;
     elements.holdEditBar.classList.toggle("is-hidden", !edit);
@@ -610,7 +776,7 @@
   function startHoldEdit(dancerId, interval, options = {}) {
     const dancer = state.dancers.find((candidate) => candidate.id === dancerId);
     if (!dancer || !interval) return;
-    if (state.transitionEdit) {
+    if (state.transitionEdit || state.stageSizeEdit) {
       requireFinishedTransitionEdit();
       return;
     }
@@ -760,6 +926,8 @@
       previousViewport.end >= previousDuration - TIME_EPSILON;
     state.projectTitle = normalizeProjectTitle(project.projectTitle);
     state.stageOrientation = normalizeStageOrientation(project.stageOrientation);
+    state.stageWidth = normalizeStageSize(project.stageWidth ?? 1);
+    state.stageDepth = normalizeStageSize(project.stageDepth ?? 1);
     state.audioVolume = clamp(project.audioVolume ?? 0.9, 0, 1);
     state.videoVolume = clamp(project.videoVolume ?? 0.8, 0, 1);
     state.duration = clamp(project.duration, 1, 3600);
@@ -902,6 +1070,8 @@
     state.selectedDancerId = null;
     state.selectedDancerIds = [];
     state.stageOrientation = "front-bottom";
+    state.stageWidth = 1;
+    state.stageDepth = 1;
     state.audioVolume = 0.9;
     state.videoVolume = 0.8;
     state.activeStageTool = null;
@@ -1051,7 +1221,8 @@
     const x = ((event.clientX - rect.left) / rect.width) * 100;
     const y = ((event.clientY - rect.top) / rect.height) * 100;
     if (options.clampToStage === false) return { x, y };
-    return { x: clamp(x, 2.5, 97.5), y: clamp(y, 4, 96) };
+    const bounds = getStageBoundsForDimensions({ width: state.stageWidth, depth: state.stageDepth });
+    return { x: clamp(x, bounds.minX, bounds.maxX), y: clamp(y, bounds.minY, bounds.maxY) };
   }
 
   function setStageOrientation(orientation) {
@@ -1077,19 +1248,62 @@
     };
   }
 
-  function layoutStageSurface() {
+  function layoutStageSurface(attempt = 0) {
     const viewportRect = elements.stageViewport.getBoundingClientRect();
     if (viewportRect.width <= 0 || viewportRect.height <= 0) return;
-    const width = viewportRect.width * state.stageZoom;
-    const height = viewportRect.height * state.stageZoom;
+    const viewportWidth = elements.stageViewport.clientWidth || viewportRect.width;
+    const viewportHeight = elements.stageViewport.clientHeight || viewportRect.height;
+    const edit = state.stageSizeEdit;
+    const extentWidthMultiplier = edit ? Math.max(state.stageWidth, edit.originalWidth) : state.stageWidth;
+    const extentDepthMultiplier = edit ? Math.max(state.stageDepth, edit.originalDepth) : state.stageDepth;
+    const fitScale = 1 / Math.max(extentWidthMultiplier, extentDepthMultiplier);
+    const displayScale = fitScale * state.stageZoom;
+    const width = viewportWidth * state.stageWidth * displayScale;
+    const height = viewportHeight * state.stageDepth * displayScale;
+    const extentWidth = viewportWidth * extentWidthMultiplier * displayScale;
+    const extentHeight = viewportHeight * extentDepthMultiplier * displayScale;
+    const surfaceWidth = Math.max(viewportWidth, extentWidth);
+    const surfaceHeight = Math.max(viewportHeight, extentHeight);
+    const extentLeft = (surfaceWidth - extentWidth) / 2;
+    const extentTop = (surfaceHeight - extentHeight) / 2;
+    const stageLeft = extentLeft + (extentWidth - width) / 2;
+    const stageTop = extentTop + (state.stageOrientation === "front-top" ? 0 : extentHeight - height);
+    elements.stageSurfaceExtent.style.width = `${surfaceWidth}px`;
+    elements.stageSurfaceExtent.style.height = `${surfaceHeight}px`;
     elements.stage.style.width = `${width}px`;
     elements.stage.style.height = `${height}px`;
-    elements.stage.style.left = `${Math.max(0, (viewportRect.width - width) / 2)}px`;
-    elements.stage.style.top = `${Math.max(0, (viewportRect.height - height) / 2)}px`;
-    elements.stage.style.setProperty("--stage-zoom", state.stageZoom);
+    elements.stage.style.left = `${stageLeft}px`;
+    elements.stage.style.top = `${stageTop}px`;
+    elements.stage.style.setProperty("--stage-display-scale", displayScale);
+    elements.stage.style.setProperty("--stage-grid-column-size", `${10 / state.stageWidth}%`);
+    elements.stage.style.setProperty("--stage-grid-row-size", `${10 / state.stageDepth}%`);
+    if (edit) {
+      const originalWidth = viewportWidth * edit.originalWidth * displayScale;
+      const originalHeight = viewportHeight * edit.originalDepth * displayScale;
+      elements.stageSizeOriginalOutline.style.width = `${originalWidth}px`;
+      elements.stageSizeOriginalOutline.style.height = `${originalHeight}px`;
+      elements.stageSizeOriginalOutline.style.left = `${extentLeft + (extentWidth - originalWidth) / 2}px`;
+      elements.stageSizeOriginalOutline.style.top = state.stageOrientation === "front-top"
+        ? `${extentTop}px`
+        : `${extentTop + extentHeight - originalHeight}px`;
+    }
     elements.zoomLevel.textContent = `${Math.round(state.stageZoom * 100)}%`;
     elements.zoomOutButton.disabled = state.stageZoom <= MIN_STAGE_ZOOM;
     elements.zoomInButton.disabled = state.stageZoom >= MAX_STAGE_ZOOM;
+    if (
+      attempt < 3 &&
+      (Math.abs(elements.stageViewport.clientWidth - viewportWidth) > 0.5 ||
+        Math.abs(elements.stageViewport.clientHeight - viewportHeight) > 0.5)
+    ) {
+      layoutStageSurface(attempt + 1);
+    }
+  }
+
+  function focusStageFront() {
+    elements.stageViewport.scrollLeft = Math.max(0, (elements.stageViewport.scrollWidth - elements.stageViewport.clientWidth) / 2);
+    elements.stageViewport.scrollTop = state.stageOrientation === "front-top"
+      ? 0
+      : Math.max(0, elements.stageViewport.scrollHeight - elements.stageViewport.clientHeight);
   }
 
   function positionNormalizedStagePoint(normalizedPoint, clientPoint) {
@@ -1372,6 +1586,10 @@
 
   function startMarkerDrag(event) {
     if (event.button !== 0 || state.activeStageTool === "formation-path") return;
+    if (state.stageSizeEdit || state.holdEdit) {
+      requireFinishedTransitionEdit();
+      return;
+    }
     event.preventDefault();
     const marker = event.currentTarget;
     const dancerId = marker.dataset.dancerId;
@@ -1412,7 +1630,7 @@
       const movedPositions = applyGroupDelta(startingDisplayPositions, {
         x: pointerPosition.x - pointerStartPosition.x,
         y: pointerPosition.y - pointerStartPosition.y,
-      });
+      }, getStageBoundsForDimensions({ width: state.stageWidth, depth: state.stageDepth }));
       latestDisplayPositions = startingDisplayPositions.map((position, index) => ({
         dancerId: position.dancerId,
         ...movedPositions[index],
@@ -1461,6 +1679,10 @@
   }
 
   function handleMarkerKeydown(event) {
+    if (state.stageSizeEdit || state.holdEdit) {
+      requireFinishedTransitionEdit();
+      return;
+    }
     const dancerId = event.currentTarget.dataset.dancerId;
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
@@ -1488,7 +1710,7 @@
     const movedPositions = applyGroupDelta(displayedPositions, {
       x: direction[0] * step,
       y: direction[1] * step,
-    });
+    }, getStageBoundsForDimensions({ width: state.stageWidth, depth: state.stageDepth }));
     recordGroupPositions(displayedPositions.map((position, index) => ({
       dancerId: position.dancerId,
       ...displayToStagePosition(movedPositions[index], state.stageOrientation),
@@ -1497,6 +1719,10 @@
 
   function recordGroupPositions(positionEntries, options = {}) {
     const entries = Array.isArray(positionEntries) ? positionEntries : [];
+    if (state.stageSizeEdit || state.holdEdit) {
+      requireFinishedTransitionEdit();
+      return false;
+    }
     if (state.transitionEdit) return previewTransitionPositions(entries, options);
     const entryMap = new Map(entries.map((entry) => [entry.dancerId, entry]));
     const affectedDancers = state.dancers.filter((dancer) => entryMap.has(dancer.id));
@@ -2214,11 +2440,13 @@
 
   function serializeProject() {
     return {
-      version: 3,
+      version: 4,
       projectTitle: normalizeProjectTitle(state.projectTitle),
       duration: state.duration,
       dancerCounter: state.dancerCounter,
       stageOrientation: state.stageOrientation,
+      stageWidth: state.stageWidth,
+      stageDepth: state.stageDepth,
       audioVolume: state.audioVolume,
       videoVolume: state.videoVolume,
       dancers: state.dancers.map((dancer) => ({
@@ -2487,7 +2715,7 @@
     clearTimeout(saveTimer);
     saveTimer = null;
     if (isDocumentEditOpen()) {
-      setSaveStatus(state.holdEdit ? "Hold timing preview not applied" : "Transition preview not applied");
+      setSaveStatus(getDocumentEditSaveMessage());
       return false;
     }
     if (state.storageWriteBlocked) {
@@ -2506,7 +2734,7 @@
 
   function queueSave() {
     if (isDocumentEditOpen()) {
-      setSaveStatus(state.holdEdit ? "Hold timing preview not applied" : "Transition preview not applied");
+      setSaveStatus(getDocumentEditSaveMessage());
       return;
     }
     if (state.storageWriteBlocked) {
@@ -2577,6 +2805,7 @@
     elements.totalTime.textContent = formatTime(state.duration);
     updateHistoryControls();
     renderTransitionEditMode();
+    layoutStageSurface();
   }
 
   function seekToExactTime(value) {
@@ -2672,6 +2901,12 @@
     elements.holdPositionButton.addEventListener("click", toggleSelectedHold);
     elements.applyHoldEditButton.addEventListener("click", applyHoldEdit);
     elements.cancelHoldEditButton.addEventListener("click", cancelHoldEdit);
+    elements.stageSizeButton.addEventListener("click", startStageSizeEdit);
+    elements.applyStageSizeButton.addEventListener("click", applyStageSizeEdit);
+    elements.cancelStageSizeButton.addEventListener("click", cancelStageSizeEdit);
+    elements.stageWidthInput.addEventListener("input", previewStageSizeEdit);
+    elements.stageDepthInput.addEventListener("input", previewStageSizeEdit);
+    elements.stageResizeModeInputs.forEach((input) => input.addEventListener("change", previewStageSizeEdit));
     elements.holdStartInput.addEventListener("input", () => {
       if (state.holdEdit) state.holdEdit.startTouched = true;
       previewHoldEdit();
@@ -2837,7 +3072,7 @@
       flushSave();
     });
     window.addEventListener("beforeunload", (event) => {
-      if (isTransitionEditDirty() || isHoldEditDirty()) {
+      if (isTransitionEditDirty() || isHoldEditDirty() || isStageSizeEditDirty()) {
         event.preventDefault();
         event.returnValue = "";
         return;
