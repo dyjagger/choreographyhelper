@@ -203,12 +203,12 @@
               <div class="timeline-zoom-control" role="group" aria-label="Timeline zoom controls">
                 <button id="timeline-zoom-out-button" type="button" aria-label="Zoom timeline out" aria-keyshortcuts="-" title="Zoom timeline out (-)">−</button>
                 <output id="timeline-zoom-level" aria-live="polite">1×</output>
-                <button id="timeline-zoom-in-button" type="button" aria-label="Zoom timeline in" aria-keyshortcuts="+" title="Zoom timeline in (+)">+</button>
+                <button id="timeline-zoom-in-button" type="button" aria-label="Zoom timeline in" aria-keyshortcuts="=" title="Zoom timeline in (=)">+</button>
                 <button id="timeline-fit-button" type="button">Fit</button>
               </div>
             </div>
 
-            <div id="timeline-wrap" class="timeline-wrap" title="Use + and - to zoom around the current time.">
+            <div id="timeline-wrap" class="timeline-wrap" title="Use = and - to zoom around the current time.">
               <div id="hold-track" class="hold-track" role="group" aria-label="Selected dancer hold ranges"></div>
               <div id="keyframe-track" class="keyframe-track" role="group" aria-label="Selected dancer transition points"></div>
               <input
@@ -222,7 +222,7 @@
                 aria-label="Choreography time"
               />
             </div>
-            <p class="timeline-hint">+ / − keys zoom · Fit restores the full timeline</p>
+            <p class="timeline-hint">= / − keys zoom · Fit restores the full timeline</p>
 
             <div id="hold-edit-bar" class="transition-edit-bar hold-edit-bar is-hidden" aria-live="polite">
               <div class="hold-edit-content">
@@ -373,9 +373,9 @@
               <li>Click a transition dot or recorded time to preview edits, then apply or cancel them.</li>
               <li>Click a dotted hold range, Hold chip, or Resume chip to edit its timing. Apply saves the edit; Cancel discards it.</li>
               <li>Moving Resume earlier keeps the later formation as the destination, so the dancer moves there instead of teleporting.</li>
-              <li>Use + and − to zoom the timeline around the current time, or choose Fit to show the full timeline.</li>
+              <li>Use = and − to zoom the timeline around the current time, or choose Fit to show the full timeline.</li>
             </ol>
-            <p class="keyboard-tip">Tip: H toggles Hold/End hold, A toggles Align to path, Space plays or pauses, and + / − zoom the timeline when you are not typing. Selected dancers move with the arrow keys; hold Shift for larger steps. Use Ctrl/Cmd+Z to undo.</p>
+            <p class="keyboard-tip">Tip: H toggles Hold/End hold, A toggles Align to path, Space plays or pauses, and = / − zoom the timeline when you are not typing. Selected dancers move with the arrow keys; hold Shift for larger steps. Use Ctrl/Cmd+Z to undo.</p>
           </section>
         </aside>
       </main>

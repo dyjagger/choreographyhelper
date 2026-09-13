@@ -2870,7 +2870,7 @@
       setActiveStageTool("formation-path");
       return;
     }
-    if (event.key === "+") {
+    if (event.key === "=" && !event.shiftKey) {
       if (elements.timelineZoomInButton.disabled) return;
       event.preventDefault();
       elements.timelineZoomInButton.click();

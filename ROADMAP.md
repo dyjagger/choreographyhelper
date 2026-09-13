@@ -180,7 +180,7 @@ Status: complete, accepted, and approved for release in v0.4.0.
 - Make selected-dancer hold ranges and Hold/Resume chips open a transactional timing editor.
 - Keep Resume at the held coordinate while preserving a relocated legacy Resume position as a later arrival.
 - Prevent formation editing from relocating a Resume departure point.
-- Add timeline zoom controls, Fit, + / − shortcuts around the playhead, and playback auto-follow while keeping normal mouse-wheel scrolling.
+- Add timeline zoom controls, Fit, = / − shortcuts around the playhead, and playback auto-follow while keeping normal mouse-wheel scrolling.
 - Add guarded H, A, and Space shortcuts for Hold/End hold, Align to path, and play/pause that do not fire while typing or editing.
 
 Acceptance:
@@ -188,4 +188,4 @@ Acceptance:
 - The supplied `test1.json` can give each affected dancer a user-chosen movement interval without teleporting.
 - Apply is one undoable action; Cancel restores the original hold and formation exactly.
 - Timeline zoom never changes project duration, keyframes, autosave, or exported project data.
-- H, A, Space, and timeline + / − work in both browser and Electron and are ignored in native input fields; editing shortcuts remain blocked during open edit transactions.
+- H, A, Space, and timeline = / − work in both browser and Electron and are ignored in native input fields; editing shortcuts remain blocked during open edit transactions.

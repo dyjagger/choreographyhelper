@@ -39,7 +39,7 @@ Use modifier-click or a desktop selection rectangle to select several dancers. O
 
 Select dancers and choose **Hold position**, or press **H** while focus is outside a text field, to freeze them from the current playhead time. Their dotted stage rings and the dotted timeline range show the active hold. Move to a later time and choose **End hold** or press **H** again; they then continue toward their next recorded destination. Click a dotted hold range, Hold chip, or Resume chip to edit its timing as an Apply/Cancel transaction. You can type exact start/resume times or move the timeline and choose **Use current time**. Moving Resume earlier keeps the later formation as the destination so the dancer travels instead of teleporting. Hold and resume events are saved, exported, imported, and undoable.
 
-Press **+** or **−** to zoom the timeline around the current playhead, or use the timeline buttons. **Fit** restores the complete timeline. Timeline zoom is view-only and never changes choreography timing or exported data. The mouse wheel keeps its normal scrolling behavior over both the timeline and stage.
+Press **=** or **−** to zoom the timeline around the current playhead, or use the timeline buttons. **Fit** restores the complete timeline. Timeline zoom is view-only and never changes choreography timing or exported data. The mouse wheel keeps its normal scrolling behavior over both the timeline and stage.
 
 Select two or more dancers and activate **Align to path**, or press **A**, to draw a freeform curve. Hold Shift while dragging to snap the path to a perfectly straight line. Labeled ghost markers preview the result before the dancers are evenly placed along the path.
 
