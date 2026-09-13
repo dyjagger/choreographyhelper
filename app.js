@@ -26,7 +26,6 @@
     normalizeProjectTitle,
     normalizeTimelineViewport,
     orderPositionsAlongPath,
-    panTimelineViewport,
     prepareFormationPath,
     pushHistory,
     redoHistory,
@@ -1330,12 +1329,6 @@
     positionNormalizedStagePoint(normalizedPoint, anchor);
   }
 
-  function handleStageWheel(event) {
-    event.preventDefault();
-    const factor = Math.exp(-event.deltaY * 0.0015);
-    setStageZoom(state.stageZoom * factor, { anchor: { x: event.clientX, y: event.clientY } });
-  }
-
   function getTouchPair() {
     return [...stageTouchPointers.values()].slice(0, 2);
   }
@@ -1995,25 +1988,10 @@
     ));
   }
 
-  function handleTimelineWheel(event) {
-    event.preventDefault();
+  function zoomTimelineFromPlayhead(factor) {
     const viewport = getTimelineViewport();
-    const span = viewport.end - viewport.start;
-    if (event.shiftKey) {
-      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-      if (delta === 0) return;
-      setTimelineViewport(panTimelineViewport(
-        viewport,
-        (delta > 0 ? 1 : -1) * span * 0.12,
-        state.duration,
-        getMinimumTimelineSpan(),
-      ));
-      return;
-    }
-    const rect = elements.timeline.getBoundingClientRect();
-    const pointerRatio = rect.width > 0 ? clamp((event.clientX - rect.left) / rect.width, 0, 1) : 0.5;
-    const anchorTime = viewport.start + span * pointerRatio;
-    zoomTimelineAt(anchorTime, event.deltaY < 0 ? TIMELINE_ZOOM_STEP : 1 / TIMELINE_ZOOM_STEP);
+    const anchor = clamp(state.currentTime, viewport.start, viewport.end);
+    zoomTimelineAt(anchor, factor);
   }
 
   function renderHoldTrack(dancer) {
@@ -2868,7 +2846,7 @@
     setActiveStageTool(state.activeStageTool);
   }
 
-  function handleHoldShortcut(event) {
+  function handleAppShortcut(event) {
     if (
       event.defaultPrevented ||
       event.isComposing ||
@@ -2876,14 +2854,38 @@
       isNativeEditingTarget(event.target) ||
       event.ctrlKey ||
       event.metaKey ||
-      event.altKey ||
-      event.shiftKey ||
-      event.key.toLowerCase() !== "h" ||
-      isDocumentEditOpen() ||
-      elements.holdPositionButton.disabled
+      event.altKey
     ) return;
-    event.preventDefault();
-    elements.holdPositionButton.click();
+
+    const key = event.key.toLowerCase();
+    if (key === "h" && !event.shiftKey) {
+      if (isDocumentEditOpen() || elements.holdPositionButton.disabled) return;
+      event.preventDefault();
+      elements.holdPositionButton.click();
+      return;
+    }
+    if (key === "a" && !event.shiftKey) {
+      if (isDocumentEditOpen()) return;
+      event.preventDefault();
+      setActiveStageTool("formation-path");
+      return;
+    }
+    if (event.key === "+") {
+      if (elements.timelineZoomInButton.disabled) return;
+      event.preventDefault();
+      elements.timelineZoomInButton.click();
+      return;
+    }
+    if (event.key === "-" && !event.shiftKey) {
+      if (elements.timelineZoomOutButton.disabled) return;
+      event.preventDefault();
+      elements.timelineZoomOutButton.click();
+      return;
+    }
+    if (event.key === " " && !event.shiftKey) {
+      event.preventDefault();
+      elements.playButton.click();
+    }
   }
 
   function bindEvents() {
@@ -2921,18 +2923,8 @@
     elements.zoomOutButton.addEventListener("click", () => setStageZoom(state.stageZoom - STAGE_ZOOM_STEP));
     elements.zoomResetButton.addEventListener("click", () => setStageZoom(1));
     elements.zoomInButton.addEventListener("click", () => setStageZoom(state.stageZoom + STAGE_ZOOM_STEP));
-    elements.stageViewport.addEventListener("wheel", handleStageWheel, { passive: false });
-    elements.timelineWrap.addEventListener("wheel", handleTimelineWheel, { passive: false });
-    elements.timelineZoomOutButton.addEventListener("click", () => {
-      const viewport = getTimelineViewport();
-      const anchor = clamp(state.currentTime, viewport.start, viewport.end);
-      zoomTimelineAt(anchor, 1 / TIMELINE_ZOOM_STEP);
-    });
-    elements.timelineZoomInButton.addEventListener("click", () => {
-      const viewport = getTimelineViewport();
-      const anchor = clamp(state.currentTime, viewport.start, viewport.end);
-      zoomTimelineAt(anchor, TIMELINE_ZOOM_STEP);
-    });
+    elements.timelineZoomOutButton.addEventListener("click", () => zoomTimelineFromPlayhead(1 / TIMELINE_ZOOM_STEP));
+    elements.timelineZoomInButton.addEventListener("click", () => zoomTimelineFromPlayhead(TIMELINE_ZOOM_STEP));
     elements.timelineFitButton.addEventListener("click", () => setTimelineViewport({ start: 0, end: state.duration }));
     elements.stageViewport.addEventListener("pointerdown", handleStageTouchPointerDown);
     elements.stageViewport.addEventListener("pointermove", handleStageTouchPointerMove);
@@ -3066,7 +3058,7 @@
     });
     window.addEventListener("keydown", handleHistoryShortcut);
     window.addEventListener("keydown", handleStageToolShortcut);
-    window.addEventListener("keydown", handleHoldShortcut);
+    window.addEventListener("keydown", handleAppShortcut);
     window.addEventListener("pagehide", () => {
       syncPendingTitleForExit();
       flushSave();

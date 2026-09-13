@@ -92,7 +92,14 @@
                 <span aria-hidden="true">⏸</span>
                 <span id="hold-position-label">Hold position</span>
               </button>
-              <button id="formation-path-button" class="stage-action-button" type="button" aria-pressed="false">
+              <button
+                id="formation-path-button"
+                class="stage-action-button"
+                type="button"
+                aria-pressed="false"
+                aria-keyshortcuts="A"
+                title="Align selected dancers to a path (A)"
+              >
                 <span aria-hidden="true">〰</span>
                 Align to path
               </button>
@@ -157,7 +164,14 @@
 
           <section class="transport-card" aria-label="Timeline controls">
             <div class="transport-main">
-              <button id="play-button" class="play-button" type="button" aria-label="Play choreography">
+              <button
+                id="play-button"
+                class="play-button"
+                type="button"
+                aria-label="Play choreography"
+                aria-keyshortcuts="Space"
+                title="Play or pause choreography (Space)"
+              >
                 <span id="play-icon" aria-hidden="true">▶</span>
               </button>
               <button id="restart-button" class="icon-button" type="button" aria-label="Return to start">↺</button>
@@ -187,14 +201,14 @@
             <div class="timeline-navigation">
               <span id="timeline-window-label">Full timeline</span>
               <div class="timeline-zoom-control" role="group" aria-label="Timeline zoom controls">
-                <button id="timeline-zoom-out-button" type="button" aria-label="Zoom timeline out">−</button>
+                <button id="timeline-zoom-out-button" type="button" aria-label="Zoom timeline out" aria-keyshortcuts="-" title="Zoom timeline out (-)">−</button>
                 <output id="timeline-zoom-level" aria-live="polite">1×</output>
-                <button id="timeline-zoom-in-button" type="button" aria-label="Zoom timeline in">+</button>
+                <button id="timeline-zoom-in-button" type="button" aria-label="Zoom timeline in" aria-keyshortcuts="+" title="Zoom timeline in (+)">+</button>
                 <button id="timeline-fit-button" type="button">Fit</button>
               </div>
             </div>
 
-            <div id="timeline-wrap" class="timeline-wrap" title="Mouse wheel to zoom. Shift+wheel to pan.">
+            <div id="timeline-wrap" class="timeline-wrap" title="Use + and - to zoom around the current time.">
               <div id="hold-track" class="hold-track" role="group" aria-label="Selected dancer hold ranges"></div>
               <div id="keyframe-track" class="keyframe-track" role="group" aria-label="Selected dancer transition points"></div>
               <input
@@ -208,7 +222,7 @@
                 aria-label="Choreography time"
               />
             </div>
-            <p class="timeline-hint">Wheel to zoom · Shift+wheel to pan · Fit restores the full timeline</p>
+            <p class="timeline-hint">+ / − keys zoom · Fit restores the full timeline</p>
 
             <div id="hold-edit-bar" class="transition-edit-bar hold-edit-bar is-hidden" aria-live="polite">
               <div class="hold-edit-content">
@@ -359,9 +373,9 @@
               <li>Click a transition dot or recorded time to preview edits, then apply or cancel them.</li>
               <li>Click a dotted hold range, Hold chip, or Resume chip to edit its timing. Apply saves the edit; Cancel discards it.</li>
               <li>Moving Resume earlier keeps the later formation as the destination, so the dancer moves there instead of teleporting.</li>
-              <li>Wheel over the timeline to zoom, Shift-wheel to pan, or choose Fit to show the full timeline.</li>
+              <li>Use + and − to zoom the timeline around the current time, or choose Fit to show the full timeline.</li>
             </ol>
-            <p class="keyboard-tip">Tip: H toggles Hold/End hold when you are not typing or editing. Selected dancers move with the arrow keys; hold Shift for larger steps. Use Ctrl/Cmd+Z to undo.</p>
+            <p class="keyboard-tip">Tip: H toggles Hold/End hold, A toggles Align to path, Space plays or pauses, and + / − zoom the timeline when you are not typing. Selected dancers move with the arrow keys; hold Shift for larger steps. Use Ctrl/Cmd+Z to undo.</p>
           </section>
         </aside>
       </main>

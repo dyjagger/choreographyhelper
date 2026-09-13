@@ -63,7 +63,7 @@ Acceptance:
 Status: complete.
 
 - Add zoom out, zoom percentage/reset, and zoom in controls.
-- Zoom with a mouse wheel around the pointer location.
+- Keep the mouse wheel available for normal scrolling.
 - Pinch around the gesture midpoint on touch devices.
 - Pan a zoomed stage without changing dancer positions.
 - Constrain zoom to 100–300 percent.
@@ -180,12 +180,12 @@ Status: complete, accepted, and approved for release in v0.4.0.
 - Make selected-dancer hold ranges and Hold/Resume chips open a transactional timing editor.
 - Keep Resume at the held coordinate while preserving a relocated legacy Resume position as a later arrival.
 - Prevent formation editing from relocating a Resume departure point.
-- Add pointer-anchored timeline wheel zoom, Shift-wheel panning, controls, Fit, and playback auto-follow.
-- Add a guarded H shortcut for Hold/End hold that does not fire while typing or editing.
+- Add timeline zoom controls, Fit, + / − shortcuts around the playhead, and playback auto-follow while keeping normal mouse-wheel scrolling.
+- Add guarded H, A, and Space shortcuts for Hold/End hold, Align to path, and play/pause that do not fire while typing or editing.
 
 Acceptance:
 
 - The supplied `test1.json` can give each affected dancer a user-chosen movement interval without teleporting.
 - Apply is one undoable action; Cancel restores the original hold and formation exactly.
 - Timeline zoom never changes project duration, keyframes, autosave, or exported project data.
-- H works in both browser and Electron and is ignored in native input fields and open edit transactions.
+- H, A, Space, and timeline + / − work in both browser and Electron and are ignored in native input fields; editing shortcuts remain blocked during open edit transactions.
