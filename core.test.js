@@ -62,8 +62,8 @@ test("stage dimensions normalize and calculate constant physical marker margins"
   assert.equal(normalizeStageSize(0), 1);
   assert.equal(normalizeStageSize(9), 4);
   assert.deepEqual(getStageBoundsForDimensions({ width: 2, depth: 2 }), {
-    minX: 26.25,
-    maxX: 73.75,
+    minX: 1.25,
+    maxX: 98.75,
     minY: 2,
     maxY: 98,
   });
@@ -138,6 +138,19 @@ test("group deltas clamp as one rigid formation at stage boundaries", () => {
     { x: 97.5, y: 74 },
   ]);
   assert.deepEqual(clampGroupDelta([], { x: 5, y: 5 }, DEFAULT_STAGE_BOUNDS), { x: 0, y: 0 });
+});
+
+test("group movement can use the added area of an expanded stage", () => {
+  const expandedBounds = getStageBoundsForDimensions({ width: 2, depth: 2 });
+  const positions = [{ x: 35, y: 60 }, { x: 65, y: 70 }];
+  assert.deepEqual(clampGroupDelta(positions, { x: -50, y: -80 }, expandedBounds), {
+    x: -33.75,
+    y: -58,
+  });
+  assert.deepEqual(applyGroupDelta(positions, { x: -50, y: -80 }, expandedBounds), [
+    { x: 1.25, y: 2 },
+    { x: 31.25, y: 12 },
+  ]);
 });
 
 test("polyline sampling distributes positions at equal path distances", () => {

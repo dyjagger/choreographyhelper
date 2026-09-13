@@ -44,8 +44,8 @@
   function getStageBoundsForDimensions(dimensions = {}) {
     const { width, depth } = normalizeStageDimensions(dimensions);
     return {
-      minX: 50 - 47.5 / width,
-      maxX: 50 + 47.5 / width,
+      minX: 2.5 / width,
+      maxX: 100 - 2.5 / width,
       minY: 4 / depth,
       maxY: 100 - 4 / depth,
     };
