@@ -2826,6 +2826,13 @@
     );
   }
 
+  function isShortcutEditingTarget(target) {
+    return target instanceof Element && (
+      target.matches('input:not([type="range"]), textarea, select') ||
+      target.isContentEditable
+    );
+  }
+
   function handleHistoryShortcut(event) {
     if (isNativeEditingTarget(event.target) || event.altKey || (!event.ctrlKey && !event.metaKey)) return;
     const key = event.key.toLowerCase();
@@ -2851,7 +2858,7 @@
       event.defaultPrevented ||
       event.isComposing ||
       event.repeat ||
-      isNativeEditingTarget(event.target) ||
+      isShortcutEditingTarget(event.target) ||
       event.ctrlKey ||
       event.metaKey ||
       event.altKey
@@ -2882,7 +2889,8 @@
       elements.timelineZoomOutButton.click();
       return;
     }
-    if (event.key === " " && !event.shiftKey) {
+    const isSpace = event.key === " " || event.key === "Spacebar" || event.code === "Space";
+    if (isSpace && !event.shiftKey) {
       event.preventDefault();
       elements.playButton.click();
     }

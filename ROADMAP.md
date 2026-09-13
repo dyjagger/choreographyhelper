@@ -188,4 +188,4 @@ Acceptance:
 - The supplied `test1.json` can give each affected dancer a user-chosen movement interval without teleporting.
 - Apply is one undoable action; Cancel restores the original hold and formation exactly.
 - Timeline zoom never changes project duration, keyframes, autosave, or exported project data.
-- H, A, Space, and timeline = / − work in both browser and Electron and are ignored in native input fields; editing shortcuts remain blocked during open edit transactions.
+- H, A, Space, and timeline = / − work in both browser and Electron after stage or timeline-slider interaction and are ignored in text-entry fields; editing shortcuts remain blocked during open edit transactions.
