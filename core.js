@@ -112,7 +112,7 @@
     const x = roundCoordinate(position?.x);
     const y = roundCoordinate(position?.y);
     return {
-      x,
+      x: normalizedOrientation === STAGE_ORIENTATION_FRONT_TOP ? roundCoordinate(100 - x) : x,
       y: normalizedOrientation === STAGE_ORIENTATION_FRONT_TOP ? roundCoordinate(100 - y) : y,
     };
   }

@@ -49,12 +49,21 @@ const {
   zoomTimelineViewport,
 } = require("./core.js");
 
-test("stage orientation mirrors only the vertical coordinate and round-trips", () => {
+test("stage orientation mirrors both coordinates and round-trips", () => {
   const stored = { x: 22.25, y: 84.75 };
   assert.deepEqual(stageToDisplayPosition(stored, "front-bottom"), stored);
-  assert.deepEqual(stageToDisplayPosition(stored, "front-top"), { x: 22.25, y: 15.25 });
-  assert.deepEqual(displayToStagePosition({ x: 22.25, y: 15.25 }, "front-top"), stored);
+  assert.deepEqual(stageToDisplayPosition(stored, "front-top"), { x: 77.75, y: 15.25 });
+  assert.deepEqual(displayToStagePosition({ x: 77.75, y: 15.25 }, "front-top"), stored);
+  assert.deepEqual(stageToDisplayPosition(stageToDisplayPosition(stored, "front-top"), "front-top"), stored);
   assert.equal(normalizeStageOrientation("unexpected"), "front-bottom");
+});
+
+test("front-top movement converts screen left and right into the opposite stage sides", () => {
+  const stored = { x: 20, y: 70 };
+  const displayed = stageToDisplayPosition(stored, "front-top");
+  const [moved] = applyGroupDelta([displayed], { x: 10, y: 5 });
+  assert.deepEqual(displayToStagePosition(moved, "front-top"), { x: 10, y: 65 });
+  assert.deepEqual(stored, { x: 20, y: 70 });
 });
 
 test("stage dimensions normalize and calculate constant physical marker margins", () => {

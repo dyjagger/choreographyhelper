@@ -29,7 +29,7 @@ Use the **Go to** field to move the playhead to an exact second. Click a transit
 
 Use **New project** to permanently clear the choreography, loaded audio, and loaded video after a confirmation. Export anything you want to keep first.
 
-Up to 50 dancers are supported. Edit dancer names directly in the cast list. Unnamed dancers use their number on the stage; named dancers use the first two characters of their name, such as `Ma` for Maya. The front of the stage can be shown at the top or bottom without rewriting saved keyframes.
+Up to 50 dancers are supported. Edit dancer names directly in the cast list. Unnamed dancers use their number on the stage; named dancers use the first two characters of their name, such as `Ma` for Maya. Switching the front of the stage between top and bottom turns the view through 180°, mirroring left/right and front/back without rewriting saved keyframes.
 
 Choose **Stage size** to change width and depth independently from 1× to 4×. **Keep formation spacing** preserves the dancers' real spacing while width grows equally on both sides and depth is added behind the current stage; **Stretch to fill stage** keeps their percentage positions instead. The dashed outline shows the original boundary during the preview. Apply makes the whole resize one undoable edit, while Cancel restores the original stage and formations. A reduction that cannot contain an existing formation is blocked in Keep spacing mode.
 
