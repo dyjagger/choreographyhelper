@@ -887,11 +887,15 @@
   }
 
   function updateDurationFromMedia(allowKeyframeFloor = false) {
-    const durations = getLoadedMediaPlayers()
+    const players = getLoadedMediaPlayers();
+    const durations = players
       .map((player) => player.duration)
       .filter((duration) => Number.isFinite(duration) && duration > 0);
     const hasMedia = state.audioUrl !== null || state.videoUrl !== null;
     elements.durationInput.disabled = hasMedia;
+    // Complete projects load audio and video together. A short reference clip can
+    // finish first, so validate the combined duration only after both are ready.
+    if (players.some((player) => !player.error && player.readyState < 1)) return true;
     if (durations.length === 0) return true;
 
     const mediaDuration = Math.max(...durations);

@@ -1,7 +1,7 @@
 {
   "name": "choreography-positioner",
   "productName": "Formation Studio",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "private": true,
   "main": "desktop/main.js",
   "description": "A local-first browser choreography formation planner.",

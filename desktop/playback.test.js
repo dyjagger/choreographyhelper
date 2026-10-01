@@ -35,6 +35,7 @@ test("desktop playback survives flips, errors, retry, cancellation and media rep
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "formation-playback-test-"));
   const wavPath = path.join(directory, "playback.wav");
   const mp3Path = path.join(__dirname, "fixtures", "playback.mp3");
+  const replacementMp3Path = path.join(__dirname, "fixtures", "replacement.mp3");
   const videoPath = path.join(__dirname, "fixtures", "reference.mp4");
   await fs.writeFile(wavPath, createWav());
   const portServer = net.createServer();
@@ -226,6 +227,9 @@ test("desktop playback survives flips, errors, retry, cancellation and media rep
   await loadWav();
   assert.equal((await status()).name, "playback.wav");
   assert.equal((await status()).error, null);
+  await evaluate(`document.querySelector('#timeline').value=20;document.querySelector('#timeline').dispatchEvent(new Event('input'));
+    document.querySelector('#x-input').value=60;document.querySelector('#y-input').value=60;
+    document.querySelector('#record-coordinates-button').click();`);
 
   const { root } = await send("DOM.getDocument");
   const { nodeId: videoInput } = await send("DOM.querySelector", { nodeId: root.nodeId, selector: "#video-input" });
@@ -247,8 +251,53 @@ test("desktop playback survives flips, errors, retry, cancellation and media rep
   await waitFor("!document.querySelector('#video-player').error && !document.querySelector('#video-player').paused && !document.querySelector('#audio-player').paused", "Retained video did not recover with the audio");
   await delay(500);
   await click("#play-button");
+
+  await evaluate(`window.exportedProject=null;window.savedAnchorClick=HTMLAnchorElement.prototype.click;
+    window.savedCreateObjectURL=URL.createObjectURL;
+    URL.createObjectURL=function(blob){window.exportedProject=blob;return window.savedCreateObjectURL.call(URL,blob);};
+    HTMLAnchorElement.prototype.click=function(){if(!this.download.endsWith('.formation'))window.savedAnchorClick.call(this);};`);
+  await click("#export-package-button");
+  await waitFor("Boolean(window.exportedProject)", "Combined-media export did not finish");
+  assert.equal(await evaluate(`(async()=>{window.completeImportBlob=window.exportedProject;
+    HTMLAnchorElement.prototype.click=window.savedAnchorClick;URL.createObjectURL=window.savedCreateObjectURL;
+    const entries=await window.FormationPackage.readStoredZip(window.completeImportBlob);
+    const project=JSON.parse(await entries.get('choreography.json').blob.text());
+    return project.dancers.some(d=>d.keyframes.some(frame=>frame.time===20));})()`), true);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // Delay only the audio source assignment to deterministically make the shorter
+    // reference video finish metadata first, as it did in a real saved project.
+    await evaluate(`(()=>{window.confirm=()=>true;window.metadataOrder=[];
+      const audio=document.querySelector('#audio-player'),video=document.querySelector('#video-player');
+      const source=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'src');
+      Object.defineProperty(audio,'src',{configurable:true,get(){return source.get.call(this);},
+        set(value){setTimeout(()=>source.set.call(this,value),200);}});
+      audio.addEventListener('loadedmetadata',()=>window.metadataOrder.push('audio'),{once:true});
+      video.addEventListener('loadedmetadata',()=>window.metadataOrder.push('video'),{once:true});
+      const input=document.querySelector('#import-input'),transfer=new DataTransfer();
+      transfer.items.add(new File([window.completeImportBlob],'playback.formation',{type:'application/zip'}));
+      input.files=transfer.files;input.dispatchEvent(new Event('change'));})()`);
+    await waitFor("!document.querySelector('#import-button').disabled && document.querySelector('#audio-player').duration === 45 && document.querySelector('#video-player').duration === 3", "Import must keep both media files when video metadata arrives first");
+    await evaluate("delete document.querySelector('#audio-player').src");
+    assert.deepEqual(await evaluate("window.metadataOrder"), ["video", "audio"]);
+    assert.equal((await status()).name, "playback.wav");
+    assert.equal(await evaluate("document.querySelector('#video-name').textContent"), "reference.mp4");
+  }
+  await click("#play-button");
+  await waitFor("!document.querySelector('#video-player').paused && !document.querySelector('#audio-player').paused", "Imported project media did not play together");
+  await delay(500);
+  await click("#play-button");
   await click("#remove-video-button");
   assert.equal(await evaluate("document.querySelector('#video-name').textContent"), "");
+  await loadAudio(replacementMp3Path);
+  await evaluate(`for(let i=0;i<100;i++)document.querySelector(i%2?'#front-bottom-button':'#front-top-button').click()`);
+  await click("#play-button");
+  await waitFor("!document.querySelector('#audio-player').paused", "The second MP3 format did not start");
+  await delay(12000);
+  assert.equal((await status()).paused, false);
+  assert.equal((await status()).error, null);
+  assert.equal((await status()).name, "replacement.mp3");
+  assert.ok((await status()).time >= 11);
+  await click("#play-button");
   assert.deepEqual(exceptions, [], "No renderer exceptions or crashes should occur");
   assert.equal(exit, undefined, log);
 });
