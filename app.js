@@ -96,6 +96,7 @@
     dancerCount: document.querySelector("#dancer-count"),
     dancerList: document.querySelector("#dancer-list"),
     durationInput: document.querySelector("#duration-input"),
+    editKeyframeButton: document.querySelector("#edit-keyframe-button"),
     emptyStage: document.querySelector("#empty-stage"),
     exportButton: document.querySelector("#export-button"),
     exportPackageButton: document.querySelector("#export-package-button"),
@@ -430,6 +431,57 @@
     renderTransitionGhosts();
     renderHoldEditMode();
     renderStageSizeEditMode();
+  }
+
+  function seekToKeyframe(dancerId, frameTime, sourceControl) {
+    const dancer = state.dancers.find((candidate) => candidate.id === dancerId);
+    if (!dancer || !dancer.keyframes.some((frame) => Math.abs(frame.time - frameTime) <= TIME_EPSILON)) return;
+    if (state.transitionEdit && !isTransitionEditDirty()) cancelTransitionEdit({ announce: false });
+    if (state.holdEdit && !isHoldEditDirty()) cancelHoldEdit({ announce: false });
+    if (!requireFinishedTransitionEdit()) return;
+    pausePlayback();
+    if (state.selectedDancerId !== dancerId) setSelectedDancerIds([dancerId], { primaryDancerId: dancerId });
+    setCurrentTime(frameTime);
+    // Seeking a label outside a zoomed view rebuilds the track. Keep keyboard
+    // focus on the corresponding navigation control after that redraw.
+    if (sourceControl && !sourceControl.isConnected) {
+      const selector = sourceControl.classList.contains("keyframe-dot") ? ".keyframe-dot" : ".keyframe-jump";
+      const replacement = [...document.querySelectorAll(selector)].find((control) => (
+        Math.abs(Number(control.closest("[data-keyframe-time]").dataset.keyframeTime) - frameTime) <= TIME_EPSILON
+      ));
+      replacement?.focus({ preventScroll: true });
+    }
+  }
+
+  function getKeyframeNavigationLabel(dancer, frameTime, holdEvent) {
+    return `Go to ${holdEvent === "start" ? "hold start" : holdEvent === "end" ? "hold end" : `${dancer.name} transition`} at ${formatTime(frameTime)}`;
+  }
+
+  function getCurrentKeyframeEditTarget() {
+    const dancer = getSelectedDancer();
+    const frame = dancer?.keyframes.find((candidate) => Math.abs(candidate.time - state.currentTime) <= TIME_EPSILON);
+    if (!frame) return null;
+    const interval = getHoldIntervals(dancer.keyframes).find((hold) => (
+      (frame.hold === true && Math.abs(hold.start - frame.time) <= TIME_EPSILON) ||
+      (frame.hold === false && hold.end !== null && Math.abs(hold.end - frame.time) <= TIME_EPSILON)
+    ));
+    return { dancer, frame, interval };
+  }
+
+  function renderKeyframeEditControl() {
+    const target = getCurrentKeyframeEditTarget();
+    elements.editKeyframeButton.disabled = !target || isDocumentEditOpen();
+    elements.editKeyframeButton.textContent = target?.interval ? "Edit hold" : "Edit transition";
+    elements.editKeyframeButton.title = target
+      ? `Edit ${target.interval ? "hold timing" : "formation"} at ${formatTime(target.frame.time)}`
+      : "Select a recorded time to edit its formation";
+  }
+
+  function editCurrentKeyframe() {
+    const target = getCurrentKeyframeEditTarget();
+    if (!target || !requireFinishedTransitionEdit()) return;
+    if (target.interval) startHoldEdit(target.dancer.id, target.interval, { focus: target.frame.hold ? "start" : "end" });
+    else startTransitionEdit(target.dancer.id, target.frame.time);
   }
 
   function startTransitionEdit(dancerId, frameTime) {
@@ -1833,7 +1885,21 @@
     const previousName = dancer.name;
     const changed = commitDocumentEdit(`rename ${previousName}`, () => {
       dancer.name = nextName;
-    });
+    }, { render: false });
+    // A name's change event runs during the next click. Update labels in place
+    // so saving the name cannot remove a timeline control being clicked.
+    renderDancerList();
+    renderMarkerPositions();
+    if (state.selectedDancerId === dancerId) {
+      if (state.selectedDancerIds.length === 1) {
+        elements.selectionText.textContent = `${dancer.name} · ${dancer.keyframes.length} recorded position${dancer.keyframes.length === 1 ? "" : "s"}`;
+      }
+      document.querySelectorAll(".keyframe-dot, .keyframe-jump").forEach((control) => {
+        const point = control.closest("[data-keyframe-time]");
+        const holdEvent = point.classList.contains("is-hold-start") ? "start" : point.classList.contains("is-hold-end") ? "end" : null;
+        control.setAttribute("aria-label", getKeyframeNavigationLabel(dancer, Number(point.dataset.keyframeTime), holdEvent));
+      });
+    }
     if (changed) showToast(`${previousName} renamed to ${nextName}.`);
     return nextName;
   }
@@ -2088,6 +2154,7 @@
   }
 
   function renderSelection() {
+    renderKeyframeEditControl();
     const dancer = getSelectedDancer();
     const selectedDancers = getSelectedDancers();
     elements.keyframeList.replaceChildren();
@@ -2119,11 +2186,6 @@
     normalizeKeyframes(dancer.keyframes).forEach((frame) => {
       const frameIdentity = frame.time.toFixed(3);
       const holdEvent = holdStartTimes.has(frameIdentity) ? "start" : holdEndTimes.has(frameIdentity) ? "end" : null;
-      const holdInterval = holdEvent === "start"
-        ? holdIntervals.find((interval) => Math.abs(interval.start - frame.time) <= TIME_EPSILON)
-        : holdEvent === "end"
-          ? holdIntervals.find((interval) => interval.end !== null && Math.abs(interval.end - frame.time) <= TIME_EPSILON)
-          : null;
       const displayedFrame = stageToDisplayPosition(frame, state.stageOrientation);
       const framePercent = timeToTimelinePercent(frame.time, getTimelineViewport(), state.duration, getMinimumTimelineSpan());
       if (framePercent >= -TIME_EPSILON && framePercent <= 100 + TIME_EPSILON) {
@@ -2133,12 +2195,9 @@
         if (holdEvent) dot.classList.add(`is-hold-${holdEvent}`);
         dot.style.left = `${clamp(framePercent, 0, 100)}%`;
         dot.dataset.keyframeTime = frame.time;
-        dot.setAttribute("aria-label", `Edit ${holdEvent === "start" ? "hold start" : holdEvent === "end" ? "hold end" : `${dancer.name} transition`} at ${formatTime(frame.time)}`);
-        dot.title = holdEvent ? `Edit hold timing at ${formatTime(frame.time)}` : `Edit transition at ${formatTime(frame.time)}`;
-        dot.addEventListener("click", () => {
-          if (holdInterval) startHoldEdit(dancer.id, holdInterval, { focus: holdEvent });
-          else startTransitionEdit(dancer.id, frame.time);
-        });
+        dot.setAttribute("aria-label", getKeyframeNavigationLabel(dancer, frame.time, holdEvent));
+        dot.title = `Go to ${formatTime(frame.time)}`;
+        dot.addEventListener("click", (event) => seekToKeyframe(dancer.id, frame.time, event.currentTarget));
         elements.keyframeTrack.append(dot);
       }
 
@@ -2155,11 +2214,9 @@
       jump.dataset.dancerId = dancer.id;
       jump.dataset.keyframeIdentity = chip.dataset.keyframeIdentity;
       jump.textContent = `${holdEvent === "start" ? "Hold " : holdEvent === "end" ? "Resume " : ""}${formatTime(frame.time)}`;
-      jump.setAttribute("aria-label", `Edit ${holdEvent === "start" ? "hold start" : holdEvent === "end" ? "hold end" : `${dancer.name} transition`} at ${formatTime(frame.time)}`);
-      jump.addEventListener("click", () => {
-        if (holdInterval) startHoldEdit(dancer.id, holdInterval, { focus: holdEvent });
-        else startTransitionEdit(dancer.id, frame.time);
-      });
+      jump.setAttribute("aria-label", getKeyframeNavigationLabel(dancer, frame.time, holdEvent));
+      jump.title = `Go to ${formatTime(frame.time)}`;
+      jump.addEventListener("click", (event) => seekToKeyframe(dancer.id, frame.time, event.currentTarget));
 
       const remove = document.createElement("button");
       remove.type = "button";
@@ -2177,6 +2234,7 @@
   }
 
   function updateKeyframeActiveState(force = false) {
+    renderKeyframeEditControl();
     const selected = getSelectedDancer();
     const activeFrame = selected?.keyframes.find((frame) => Math.abs(frame.time - state.currentTime) <= TIME_EPSILON);
     const activeTime = activeFrame?.time ?? null;
@@ -3026,6 +3084,7 @@
     elements.undoButton.addEventListener("click", undoDocumentEdit);
     elements.redoButton.addEventListener("click", redoDocumentEdit);
     elements.applyTransitionEditButton.addEventListener("click", applyTransitionEdit);
+    elements.editKeyframeButton.addEventListener("click", editCurrentKeyframe);
     elements.cancelTransitionEditButton.addEventListener("click", cancelTransitionEdit);
     elements.playButton.addEventListener("click", togglePlayback);
     elements.restartButton.addEventListener("click", () => {

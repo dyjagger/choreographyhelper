@@ -25,7 +25,7 @@ No dependency installation or backend is required.
 4. Move later in the timeline and drag the dancer again.
 5. Press play to see a straight-line movement between the positions.
 
-Use the **Go to** field to move the playhead to an exact second. Click a transition dot or recorded-position time to edit an existing transition. Moved dancers leave outlined markers at their original positions until you choose **Apply changes**; **Cancel** restores the original formation. An applied transition edit is one undoable action, even when several dancers change. Dancer names can be edited directly in the cast list. Undo and redo buttons cover formation edits, and Ctrl/Cmd+Z plus Ctrl/Cmd+Shift+Z work whenever focus is outside an input field.
+Use the **Go to** field to move the playhead to an exact second. Click a timeline dot or a recorded-position time below the timeline to pause and show the entire formation at that exact time, including Hold and Resume points. These navigation clicks keep project and dancer names editable. Choose **Edit transition** at a recorded position to preview changes to its formation. Moved dancers leave outlined markers at their original positions until you choose **Apply changes**; **Cancel** restores the original formation. An applied transition edit is one undoable action, even when several dancers change. Dancer names can be edited directly in the cast list. Undo and redo buttons cover formation edits, and Ctrl/Cmd+Z plus Ctrl/Cmd+Shift+Z work whenever focus is outside an input field.
 
 Use **New project** to permanently clear the choreography, loaded audio, and loaded video after a confirmation. Export anything you want to keep first.
 
@@ -37,7 +37,7 @@ Use the stage `−`, `100%`, and `+` controls or a two-finger pinch to zoom the 
 
 Use modifier-click or a desktop selection rectangle to select several dancers. On touch screens, tap dancers to add or remove them from the selection. **Select all** and **Clear** provide quick selection controls. Dragging any selected dancer or pressing an arrow key moves the selected formation as one rigid group and records one undoable edit at the current playhead time.
 
-Select dancers and choose **Hold position**, or press **H** while focus is outside a text field, to freeze them from the current playhead time. Their dotted stage rings and the dotted timeline range show the active hold. Move to a later time and choose **End hold** or press **H** again; they then continue toward their next recorded destination. Click a dotted hold range, Hold chip, or Resume chip to edit its timing as an Apply/Cancel transaction. You can type exact start/resume times or move the timeline and choose **Use current time**. Moving Resume earlier keeps the later formation as the destination so the dancer travels instead of teleporting. Hold and resume events are saved, exported, imported, and undoable.
+Select dancers and choose **Hold position**, or press **H** while focus is outside a text field, to freeze them from the current playhead time. Their dotted stage rings and the dotted timeline range show the active hold. Move to a later time and choose **End hold** or press **H** again; they then continue toward their next recorded destination. At a Hold or Resume point, choose **Edit hold**, or click a dotted hold range, to edit its timing as an Apply/Cancel transaction. You can type exact start/resume times or move the timeline and choose **Use current time**. Moving Resume earlier keeps the later formation as the destination so the dancer travels instead of teleporting. Hold and resume events are saved, exported, imported, and undoable.
 
 Press **=** or **−** to zoom the timeline around the current playhead, or use the timeline buttons. **Fit** restores the complete timeline. Timeline zoom is view-only and never changes choreography timing or exported data. The mouse wheel keeps its normal scrolling behavior over both the timeline and stage.
 
@@ -59,7 +59,7 @@ On touch phones in landscape orientation, the stage and transport occupy the lef
 npm test
 ```
 
-Run the desktop regressions with `npm run test:desktop`. They launch Electron in isolated temporary profiles and use mouse and keyboard input to check project and dancer names, focus while saving edits, shortcut handling while typing, preview locks, history, and confirmation dialogs. Playback checks cover repeated stage flips, sustained playback, decoder errors, retained-media export, complete-project import with different media loading orders, retry, cancellation, seeking, and media replacement. The Windows build runs both regressions before packaging.
+Run the desktop regressions with `npm run test:desktop`. They launch Electron in isolated temporary profiles and use mouse and keyboard input to check project and dancer names, focus while saving edits, shortcut handling while typing, timeline dots and recorded-time navigation, preview locks, history, and confirmation dialogs. Playback checks cover repeated stage flips, sustained playback, decoder errors, retained-media export, complete-project import with different media loading orders, retry, cancellation, seeking, and media replacement. The Windows build runs all three regressions before packaging.
 
 ## Windows desktop edition
 

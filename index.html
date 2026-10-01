@@ -217,7 +217,7 @@
                 type="range"
                 min="0"
                 max="60"
-                step="0.01"
+                step="any"
                 value="0"
                 aria-label="Choreography time"
               />
@@ -262,6 +262,7 @@
                 <label for="x-input">X <input id="x-input" type="number" min="0" max="100" step="0.1" /></label>
                 <label for="y-input">Y <input id="y-input" type="number" min="0" max="100" step="0.1" /></label>
                 <button id="record-coordinates-button" class="button button-quiet" type="button">Record here</button>
+                <button id="edit-keyframe-button" class="button button-quiet" type="button" disabled>Edit transition</button>
               </div>
               <div id="keyframe-list" class="keyframe-list" aria-label="Selected dancer keyframes"></div>
             </div>
@@ -370,8 +371,8 @@
               <li>Drag the dancer. Dropping it records that position.</li>
               <li>Add another position later, then press play.</li>
               <li>Choose Stage size to add width or depth. Preview with Keep spacing or Stretch, then apply or cancel.</li>
-              <li>Click a transition dot or recorded time to preview edits, then apply or cancel them.</li>
-              <li>Click a dotted hold range, Hold chip, or Resume chip to edit its timing. Apply saves the edit; Cancel discards it.</li>
+              <li>Click a timeline dot or recorded time to show that moment on the stage. Choose Edit transition to preview changes, then apply or cancel them.</li>
+              <li>Choose Edit hold at a Hold or Resume time, or click a dotted hold range, to change its timing. Apply saves the edit; Cancel discards it.</li>
               <li>Moving Resume earlier keeps the later formation as the destination, so the dancer moves there instead of teleporting.</li>
               <li>Use = and − to zoom the timeline around the current time, or choose Fit to show the full timeline.</li>
             </ol>

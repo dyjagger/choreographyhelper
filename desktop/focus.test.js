@@ -158,6 +158,7 @@ test("desktop names stay editable across mouse, keyboard, redraws, history, and 
   }
   for (const finish of ["cancel", "apply"]) {
     await app.click(".keyframe-jump");
+    await app.click("#edit-keyframe-button");
     await app.click("#x-input");
     await app.type("70");
     await app.click("#record-coordinates-button");
@@ -167,6 +168,7 @@ test("desktop names stay editable across mouse, keyboard, redraws, history, and 
   await app.click("#hold-position-button");
   for (const finish of ["cancel", "apply"]) {
     await app.click(".is-hold-start .keyframe-jump");
+    await app.click("#edit-keyframe-button");
     await app.click("#hold-end-input");
     await app.type("4");
     await app.click(`#${finish}-hold-edit-button`);
