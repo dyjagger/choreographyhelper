@@ -381,6 +381,17 @@
       </main>
     </div>
 
+    <dialog id="confirmation-dialog" class="confirmation-dialog" aria-labelledby="confirmation-title" aria-describedby="confirmation-message">
+      <form method="dialog">
+        <h2 id="confirmation-title"></h2>
+        <p id="confirmation-message"></p>
+        <div class="confirmation-actions">
+          <button id="confirmation-cancel-button" class="button button-quiet" type="submit" value="cancel" autofocus>Cancel</button>
+          <button id="confirmation-accept-button" class="button button-primary" type="submit" value="confirm"></button>
+        </div>
+      </form>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="core.js"></script>

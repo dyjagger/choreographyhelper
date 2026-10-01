@@ -59,7 +59,7 @@ On touch phones in landscape orientation, the stage and transport occupy the lef
 npm test
 ```
 
-Run the desktop playback regression with `npm run test:desktop`. It launches Electron in an isolated temporary profile and checks repeated stage flips, sustained playback, decoder errors, retained-media export, complete-project import with different media loading orders, retry, cancellation, seeking, and media replacement. The Windows build runs this regression before packaging.
+Run the desktop regressions with `npm run test:desktop`. They launch Electron in isolated temporary profiles and use mouse and keyboard input to check project and dancer names, focus while saving edits, shortcut handling while typing, preview locks, history, and confirmation dialogs. Playback checks cover repeated stage flips, sustained playback, decoder errors, retained-media export, complete-project import with different media loading orders, retry, cancellation, seeking, and media replacement. The Windows build runs both regressions before packaging.
 
 ## Windows desktop edition
 

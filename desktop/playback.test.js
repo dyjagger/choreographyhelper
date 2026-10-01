@@ -266,7 +266,7 @@ test("desktop playback survives flips, errors, retry, cancellation and media rep
   for (let attempt = 0; attempt < 3; attempt++) {
     // Delay only the audio source assignment to deterministically make the shorter
     // reference video finish metadata first, as it did in a real saved project.
-    await evaluate(`(()=>{window.confirm=()=>true;window.metadataOrder=[];
+    await evaluate(`(()=>{window.metadataOrder=[];
       const audio=document.querySelector('#audio-player'),video=document.querySelector('#video-player');
       const source=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'src');
       Object.defineProperty(audio,'src',{configurable:true,get(){return source.get.call(this);},
@@ -276,6 +276,8 @@ test("desktop playback survives flips, errors, retry, cancellation and media rep
       const input=document.querySelector('#import-input'),transfer=new DataTransfer();
       transfer.items.add(new File([window.completeImportBlob],'playback.formation',{type:'application/zip'}));
       input.files=transfer.files;input.dispatchEvent(new Event('change'));})()`);
+    await waitFor("document.querySelector('#confirmation-dialog').open", "Complete project confirmation did not open");
+    await click("#confirmation-accept-button");
     await waitFor("!document.querySelector('#import-button').disabled && document.querySelector('#audio-player').duration === 45 && document.querySelector('#video-player').duration === 3", "Import must keep both media files when video metadata arrives first");
     await evaluate("delete document.querySelector('#audio-player').src");
     assert.deepEqual(await evaluate("window.metadataOrder"), ["video", "audio"]);

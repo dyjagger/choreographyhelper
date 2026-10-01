@@ -88,6 +88,10 @@
     currentTime: document.querySelector("#current-time"),
     cancelTransitionEditButton: document.querySelector("#cancel-transition-edit-button"),
     clearSelectionButton: document.querySelector("#clear-selection-button"),
+    confirmationDialog: document.querySelector("#confirmation-dialog"),
+    confirmationTitle: document.querySelector("#confirmation-title"),
+    confirmationMessage: document.querySelector("#confirmation-message"),
+    confirmationAcceptButton: document.querySelector("#confirmation-accept-button"),
     coordinateEditor: document.querySelector("#coordinate-editor"),
     dancerCount: document.querySelector("#dancer-count"),
     dancerList: document.querySelector("#dancer-list"),
@@ -1056,10 +1060,27 @@
     };
   }
 
-  function startNewProject() {
+  function confirmAction(title, message, acceptLabel) {
+    // Browser-native confirmation windows can leave desktop text inputs without
+    // keyboard focus. Keep the prompt and focus restoration in this document.
+    const dialog = elements.confirmationDialog;
+    if (dialog.open) return Promise.resolve(false);
+    elements.confirmationTitle.textContent = title;
+    elements.confirmationMessage.textContent = message;
+    elements.confirmationAcceptButton.textContent = acceptLabel;
+    dialog.returnValue = "cancel";
+    return new Promise((resolve) => {
+      dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
+      dialog.showModal();
+    });
+  }
+
+  async function startNewProject() {
     if (!requireFinishedTransitionEdit()) return;
-    const shouldReset = window.confirm(
+    const shouldReset = await confirmAction(
+      "Start a new project?",
       "Start a new project? This permanently clears the choreography, loaded audio, and loaded video. Export anything you want to keep first.",
+      "Start new project",
     );
     if (!shouldReset) return;
 
@@ -1124,10 +1145,10 @@
     showToast(`${dancer.name} added at ${formatTime(state.currentTime)}.`);
   }
 
-  function removeDancer(dancerId) {
+  async function removeDancer(dancerId) {
     const dancer = state.dancers.find((item) => item.id === dancerId);
     if (!dancer) return;
-    if (!window.confirm(`Remove ${dancer.name} and all of its recorded positions?`)) return;
+    if (!await confirmAction("Remove dancer?", `Remove ${dancer.name} and all of its recorded positions?`, "Remove dancer")) return;
 
     commitDocumentEdit(`remove ${dancer.name}`, () => {
       const removedIndex = state.dancers.findIndex((item) => item.id === dancerId);
@@ -1817,93 +1838,117 @@
     return nextName;
   }
 
+  function createDancerRow(dancerId) {
+    const row = document.createElement("div");
+    row.className = "dancer-row";
+    row.dataset.dancerId = dancerId;
+    // History/import can replace dancer objects while the input stays in place.
+    const getDancer = () => state.dancers.find((dancer) => dancer.id === dancerId);
+
+    const main = document.createElement("div");
+    main.className = "dancer-row-main";
+
+    const selectButton = document.createElement("button");
+    selectButton.type = "button";
+    selectButton.className = "dancer-select-button";
+    selectButton.dataset.dancerId = dancerId;
+    selectButton.addEventListener("click", (event) => selectDancer(dancerId, {
+      restoreListFocus: true,
+      toggle: event.shiftKey || event.ctrlKey || event.metaKey,
+    }));
+
+    const swatch = document.createElement("span");
+    swatch.className = "dancer-swatch";
+
+    const copy = document.createElement("label");
+    copy.className = "dancer-row-copy";
+    const name = document.createElement("input");
+    name.className = "dancer-name-inline";
+    name.type = "text";
+    name.maxLength = 80;
+    name.autocomplete = "off";
+    name.dataset.dancerId = dancerId;
+    name.title = "Edit dancer name";
+    name.addEventListener("input", (event) => {
+      const dancer = getDancer();
+      if (!dancer) return;
+      const previewLabel = getDancerMarkerLabel(event.currentTarget.value, dancer.number);
+      swatch.textContent = previewLabel;
+      const marker = state.markerElements.get(dancer.id);
+      if (marker) marker.textContent = previewLabel;
+    });
+    name.addEventListener("change", (event) => renameDancer(dancerId, event.currentTarget.value));
+    name.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        event.currentTarget.blur();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        const dancer = getDancer();
+        if (!dancer) return;
+        event.currentTarget.value = dancer.name;
+        swatch.textContent = getDancerMarkerLabel(dancer.name, dancer.number);
+        const marker = state.markerElements.get(dancer.id);
+        if (marker) marker.textContent = getDancerMarkerLabel(dancer.name, dancer.number);
+        event.currentTarget.blur();
+      }
+    });
+    const frames = document.createElement("small");
+    copy.append(name, frames);
+    selectButton.append(swatch);
+    main.append(selectButton, copy);
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "remove-dancer";
+    removeButton.textContent = "×";
+    removeButton.addEventListener("click", () => removeDancer(dancerId));
+
+    row.append(main, removeButton);
+    return row;
+  }
+
   function renderDancerList() {
-    elements.dancerList.replaceChildren();
     elements.dancerCount.textContent = `${state.dancers.length} / ${MAX_DANCERS}`;
     elements.addDancerButton.disabled = state.dancers.length >= MAX_DANCERS;
-    const selectedIds = new Set(state.selectedDancerIds);
-
     if (state.dancers.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "dancer-empty";
-      empty.textContent = "No dancers yet.";
-      elements.dancerList.append(empty);
+      if (!elements.dancerList.querySelector(".dancer-empty")) {
+        const empty = document.createElement("p");
+        empty.className = "dancer-empty";
+        empty.textContent = "No dancers yet.";
+        elements.dancerList.replaceChildren(empty);
+      }
       return;
     }
 
-    state.dancers.forEach((dancer) => {
-      const row = document.createElement("div");
-      row.className = "dancer-row";
+    elements.dancerList.querySelector(".dancer-empty")?.remove();
+    const existingRows = new Map([...elements.dancerList.children].map((row) => [row.dataset.dancerId, row]));
+    const selectedIds = new Set(state.selectedDancerIds);
+    state.dancers.forEach((dancer, index) => {
+      const row = existingRows.get(dancer.id) || createDancerRow(dancer.id);
+      existingRows.delete(dancer.id);
       row.classList.toggle("is-selected", selectedIds.has(dancer.id));
       row.classList.toggle("is-primary", dancer.id === state.selectedDancerId);
-
-      const main = document.createElement("div");
-      main.className = "dancer-row-main";
-
-      const selectButton = document.createElement("button");
-      selectButton.type = "button";
-      selectButton.className = "dancer-select-button";
-      selectButton.dataset.dancerId = dancer.id;
-      selectButton.setAttribute("aria-pressed", String(selectedIds.has(dancer.id)));
-      selectButton.setAttribute("aria-label", `Select ${dancer.name}`);
-      selectButton.addEventListener("click", (event) => selectDancer(dancer.id, {
-        restoreListFocus: true,
-        toggle: event.shiftKey || event.ctrlKey || event.metaKey,
-      }));
-
-      const swatch = document.createElement("span");
-      swatch.className = "dancer-swatch";
-      swatch.style.setProperty("--dancer-color", dancer.color);
-      swatch.textContent = getDancerMarkerLabel(dancer.name, dancer.number);
-
-      const copy = document.createElement("label");
-      copy.className = "dancer-row-copy";
-      const name = document.createElement("input");
-      name.className = "dancer-name-inline";
-      name.type = "text";
-      name.maxLength = 80;
-      name.autocomplete = "off";
-      name.value = dancer.name;
+      const name = row.querySelector(".dancer-name-inline");
+      // Do not replace/move existing inputs on blur: the mouse or Tab key may
+      // already be transferring focus into another name in this list.
+      if (document.activeElement !== name) name.value = dancer.name;
       name.disabled = isDocumentEditOpen();
       name.setAttribute("aria-label", `Name for dancer ${dancer.number}`);
-      name.title = "Edit dancer name";
-      name.addEventListener("input", (event) => {
-        const previewLabel = getDancerMarkerLabel(event.currentTarget.value, dancer.number);
-        swatch.textContent = previewLabel;
-        const marker = state.markerElements.get(dancer.id);
-        if (marker) marker.textContent = previewLabel;
-      });
-      name.addEventListener("change", (event) => renameDancer(dancer.id, event.currentTarget.value));
-      name.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          event.currentTarget.blur();
-        } else if (event.key === "Escape") {
-          event.preventDefault();
-          event.currentTarget.value = dancer.name;
-          swatch.textContent = getDancerMarkerLabel(dancer.name, dancer.number);
-          const marker = state.markerElements.get(dancer.id);
-          if (marker) marker.textContent = getDancerMarkerLabel(dancer.name, dancer.number);
-          event.currentTarget.blur();
-        }
-      });
-      const frames = document.createElement("small");
-      frames.textContent = `${dancer.keyframes.length} position${dancer.keyframes.length === 1 ? "" : "s"}`;
-      copy.append(name, frames);
-      selectButton.append(swatch);
-      main.append(selectButton, copy);
-
-      const removeButton = document.createElement("button");
-      removeButton.type = "button";
-      removeButton.className = "remove-dancer";
-      removeButton.textContent = "×";
+      const selectButton = row.querySelector(".dancer-select-button");
+      selectButton.setAttribute("aria-pressed", String(selectedIds.has(dancer.id)));
+      selectButton.setAttribute("aria-label", `Select ${dancer.name}`);
+      const swatch = row.querySelector(".dancer-swatch");
+      swatch.style.setProperty("--dancer-color", dancer.color);
+      swatch.textContent = getDancerMarkerLabel(name.value, dancer.number);
+      row.querySelector("small").textContent = `${dancer.keyframes.length} position${dancer.keyframes.length === 1 ? "" : "s"}`;
+      const removeButton = row.querySelector(".remove-dancer");
       removeButton.disabled = isDocumentEditOpen();
       removeButton.setAttribute("aria-label", `Remove ${dancer.name}`);
-      removeButton.addEventListener("click", () => removeDancer(dancer.id));
-
-      row.append(main, removeButton);
-      elements.dancerList.append(row);
+      const currentRow = elements.dancerList.children[index];
+      if (currentRow !== row) elements.dancerList.insertBefore(row, currentRow || null);
     });
+    existingRows.forEach((row) => row.remove());
   }
 
   function renderSelectionControls() {
@@ -2591,8 +2636,10 @@
     const project = JSON.parse(await file.text());
     if (!isValidProjectData(project, MAX_DANCERS)) throw new Error("Invalid choreography file");
     const title = normalizeProjectTitle(project.projectTitle);
-    const shouldImport = window.confirm(
+    const shouldImport = await confirmAction(
+      "Import choreography?",
       `Replace this choreography with “${title}” (${project.dancers.length} dancers)? You can undo this import. Loaded media will stay in place.`,
+      "Import choreography",
     );
     if (!shouldImport) return;
 
@@ -2633,8 +2680,10 @@
     const project = JSON.parse(await projectEntry.blob.text());
     if (!isValidProjectData(project, MAX_DANCERS)) throw new Error("Invalid packaged choreography");
     const title = normalizeProjectTitle(project.projectTitle);
-    const shouldImport = window.confirm(
+    const shouldImport = await confirmAction(
+      "Open complete project?",
       `Open the complete project “${title}” (${project.dancers.length} dancers)? This replaces the current choreography and local media.`,
+      "Open project",
     );
     if (!shouldImport) return;
 
@@ -2658,7 +2707,7 @@
   }
 
   async function importProject(file) {
-    if (!file) return;
+    if (!file || elements.confirmationDialog.open) return;
     if (!requireFinishedTransitionEdit()) return;
     const previousText = elements.importButton.textContent;
     elements.importButton.disabled = true;
@@ -2695,6 +2744,7 @@
   }
 
   async function handleDesktopCommand(command) {
+    if (elements.confirmationDialog.open) return;
     if (command === "new") elements.newProjectButton.click();
     else if (command === "undo") elements.undoButton.click();
     else if (command === "redo") elements.redoButton.click();
@@ -2863,7 +2913,7 @@
   }
 
   function handleHistoryShortcut(event) {
-    if (isNativeEditingTarget(event.target) || event.altKey || (!event.ctrlKey && !event.metaKey)) return;
+    if (elements.confirmationDialog.open || isNativeEditingTarget(event.target) || event.altKey || (!event.ctrlKey && !event.metaKey)) return;
     const key = event.key.toLowerCase();
     const wantsUndo = key === "z" && !event.shiftKey;
     const wantsRedo = (key === "z" && event.shiftKey) || key === "y";
@@ -2877,13 +2927,14 @@
   }
 
   function handleStageToolShortcut(event) {
-    if (event.key !== "Escape" || !state.activeStageTool || isNativeEditingTarget(event.target)) return;
+    if (elements.confirmationDialog.open || event.key !== "Escape" || !state.activeStageTool || isNativeEditingTarget(event.target)) return;
     event.preventDefault();
     setActiveStageTool(state.activeStageTool);
   }
 
   function handleAppShortcut(event) {
     if (
+      elements.confirmationDialog.open ||
       event.defaultPrevented ||
       event.isComposing ||
       event.repeat ||
@@ -3066,8 +3117,8 @@
       event.preventDefault();
       importProject(file);
     });
-    elements.replaceLocalSaveButton.addEventListener("click", () => {
-      const shouldReplace = window.confirm("Replace the unreadable stored plan with the choreography currently on screen?");
+    elements.replaceLocalSaveButton.addEventListener("click", async () => {
+      const shouldReplace = await confirmAction("Replace local save?", "Replace the unreadable stored plan with the choreography currently on screen?", "Replace save");
       if (!shouldReplace) return;
       state.storageWriteBlocked = false;
       elements.replaceLocalSaveButton.classList.add("is-hidden");

@@ -29,7 +29,7 @@ async function packageDesktopApp() {
       /^\/node_modules(?:\/|$)/,
       /^\/package-lock\.json$/,
       /^\/README\.md$/,
-      /^\/desktop\/(?:installer\.iss|package-app\.js)$/,
+      /^\/desktop\/(?:installer\.iss|package-app\.js|test-driver\.js)$/,
       /^\/desktop\/fixtures(?:\/|$)/,
       /(?:^|\/)\w+\.test\.js$/,
       /^\/(?:ROADMAP|GAUNTLET_PROGRESS)\.md$/,
