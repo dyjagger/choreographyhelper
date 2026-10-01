@@ -42,7 +42,8 @@ test("desktop playback survives flips, errors, retry, cancellation and media rep
   const port = portServer.address().port;
   await new Promise(resolve => portServer.close(resolve));
   const child = spawn(require("electron"), [
-    path.resolve(__dirname, ".."), "--headless", "--no-sandbox", "--disable-gpu",
+    path.resolve(__dirname, ".."),
+    ...(process.platform === "win32" ? [] : ["--headless", "--no-sandbox", "--disable-gpu"]),
     `--user-data-dir=${path.join(directory, "profile")}`, `--remote-debugging-port=${port}`,
   ], { stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
@@ -131,7 +132,7 @@ test("desktop playback survives flips, errors, retry, cancellation and media rep
     player.load();
   })`);
   await send("Runtime.enable");
-  await waitFor("Boolean(document.querySelector('#play-button')) && Boolean(window.ChoreoCore)", "UI did not load");
+  await waitFor("document.readyState === 'complete' && Boolean(document.querySelector('#play-button')) && Boolean(window.ChoreoCore)", "UI did not load");
   await loadAudio(mp3Path);
   await evaluate(`document.querySelector('#new-dancer-name').value='Playback regression';
     document.querySelector('#add-dancer-form').requestSubmit();
@@ -179,7 +180,7 @@ test("desktop playback survives flips, errors, retry, cancellation and media rep
     return {name:manifest.media.audio?.fileName, bytes:entries.get(manifest.media.audio.entry).size};})()`);
   assert.equal(exported.name, "playback.mp3");
   assert.equal(exported.bytes, (await fs.stat(mp3Path)).size);
-  await click("#play-button");
+  await evaluate("document.querySelector('#play-button').click();document.querySelector('#audio-player').dispatchEvent(new Event('error'))");
   await waitFor("!document.querySelector('#audio-player').error && !document.querySelector('#audio-player').paused", "Play did not recover retained audio");
   assert.ok((await status()).time >= 34, "Retry should retain the playhead");
   await delay(1000);

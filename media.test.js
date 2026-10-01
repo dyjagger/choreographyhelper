@@ -56,6 +56,17 @@ test("decoder errors during a reload reject and release listeners", async () => 
   assertCleanedUp(player);
 });
 
+test("an error queued for an old source cannot cancel a healthy reload", async () => {
+  const player = mediaPlayer();
+  const ready = waitForMediaReady(player);
+  player.dispatchEvent(new Event("error"));
+  player.readyState = 1;
+  player.duration = 42;
+  player.dispatchEvent(new Event("loadedmetadata"));
+  await ready;
+  assertCleanedUp(player);
+});
+
 test("pausing or replacing media cancels a pending reload", async () => {
   const player = mediaPlayer();
   const controller = new AbortController();

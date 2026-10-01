@@ -688,7 +688,9 @@
         if (error) reject(error);
         else resolve();
       };
-      const onError = () => finish(new Error("Media could not be loaded"));
+      const onError = () => {
+        if (player.error) finish(new Error("Media could not be loaded"));
+      };
       const onAbort = () => {
         const error = new Error("Playback start cancelled");
         error.name = "AbortError";
