@@ -30,6 +30,7 @@ async function packageDesktopApp() {
       /^\/package-lock\.json$/,
       /^\/README\.md$/,
       /^\/desktop\/(?:installer\.iss|package-app\.js)$/,
+      /^\/desktop\/fixtures(?:\/|$)/,
       /(?:^|\/)\w+\.test\.js$/,
       /^\/(?:ROADMAP|GAUNTLET_PROGRESS)\.md$/,
     ],

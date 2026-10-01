@@ -36,6 +36,7 @@
     undoHistory,
     upsertKeyframe,
     upsertPositionKeyframe,
+    waitForMediaReady,
     displayToStagePosition,
     normalizeStageOrientation,
     normalizeStageSize,
@@ -195,6 +196,7 @@
     isPlaying: false,
     isStartingPlayback: false,
     markerElements: new Map(),
+    playbackAbortController: null,
     playbackOrigin: 0,
     playbackRequestId: 0,
     playbackStartedAt: 0,
@@ -880,7 +882,7 @@
 
   function getMasterMediaPlayer() {
     return getLoadedMediaPlayers()
-      .filter((player) => Number.isFinite(player.duration) && player.duration > 0)
+      .filter((player) => !player.error && Number.isFinite(player.duration) && player.duration > 0)
       .sort((left, right) => right.duration - left.duration)[0] || null;
   }
 
@@ -2180,8 +2182,9 @@
 
     if (options.syncMedia !== false) {
       getLoadedMediaPlayers().forEach((player) => {
-        if (Number.isFinite(player.duration)) {
-          player.currentTime = clamp(state.currentTime, 0, player.duration);
+        if (!player.error && player.readyState >= 1 && Number.isFinite(player.duration)) {
+          const mediaTime = clamp(state.currentTime, 0, player.duration);
+          if (Math.abs(player.currentTime - mediaTime) > 0.001) player.currentTime = mediaTime;
         }
       });
     }
@@ -2195,16 +2198,21 @@
     if (state.currentTime >= state.duration - 0.01) setCurrentTime(0);
 
     const mediaPlayers = getLoadedMediaPlayers();
-    if (mediaPlayers.some((player) => !Number.isFinite(player.duration) || player.duration <= 0)) {
-      showToast("Wait for the loaded media details before playing.");
-      return;
-    }
-
     const requestId = state.playbackRequestId + 1;
+    const controller = new AbortController();
+    state.playbackAbortController = controller;
     state.playbackRequestId = requestId;
     state.isStartingPlayback = true;
     updatePlayButton();
     try {
+      // A failed decoder needs a fresh load, but the attached project file stays intact.
+      mediaPlayers.forEach((player) => {
+        if (!player.error) return;
+        player.src = player === elements.audioPlayer ? state.audioUrl : state.videoUrl;
+        player.load();
+      });
+      await Promise.all(mediaPlayers.map((player) => waitForMediaReady(player, { signal: controller.signal })));
+      if (state.playbackRequestId !== requestId) return;
       await Promise.all(mediaPlayers.map((player) => {
         player.currentTime = clamp(state.currentTime, 0, player.duration);
         if (state.currentTime >= player.duration - 0.01) return Promise.resolve();
@@ -2220,9 +2228,8 @@
         mediaPlayers.forEach((player) => player.pause());
       }
       if (state.playbackRequestId === requestId) {
-        state.isStartingPlayback = false;
-        updatePlayButton();
-        showToast("The browser could not play one of the loaded media files.");
+        pausePlayback();
+        showToast("Playback could not start. Your media files were kept; press Play to retry.");
       }
       return;
     }
@@ -2239,6 +2246,7 @@
       return;
     }
 
+    state.playbackAbortController = null;
     state.isStartingPlayback = false;
     state.isPlaying = true;
     state.playbackStartedAt = performance.now();
@@ -2259,7 +2267,7 @@
       : clockTime;
 
     getLoadedMediaPlayers().forEach((player) => {
-      if (player === masterPlayer || player.paused || player.ended || !Number.isFinite(player.duration)) return;
+      if (player === masterPlayer || player.error || player.paused || player.ended || !Number.isFinite(player.duration)) return;
       const expectedTime = clamp(nextTime, 0, player.duration);
       if (Math.abs(player.currentTime - expectedTime) > 0.1) player.currentTime = expectedTime;
     });
@@ -2280,6 +2288,8 @@
       ? masterPlayer.currentTime
       : state.currentTime;
     state.playbackRequestId += 1;
+    state.playbackAbortController?.abort();
+    state.playbackAbortController = null;
     state.isStartingPlayback = false;
     if (state.rafId !== null) cancelAnimationFrame(state.rafId);
     state.rafId = null;
@@ -2294,6 +2304,19 @@
   function togglePlayback() {
     if (state.isPlaying || state.isStartingPlayback) pausePlayback();
     else startPlayback();
+  }
+
+  function handleMediaPlaybackError(kind) {
+    const isAudio = kind === "audio";
+    const player = isAudio ? elements.audioPlayer : elements.videoPlayer;
+    const url = isAudio ? state.audioUrl : state.videoUrl;
+    // An error queued for an old source can arrive after replacement or removal.
+    if (!url || !player.error) return;
+    pausePlayback();
+    const label = isAudio ? "Audio" : "Video";
+    const duration = isAudio ? elements.audioDuration : elements.videoDuration;
+    duration.textContent = `${label} stopped · file kept · press Play to retry`;
+    showToast(`${label} playback stopped. Your file was kept; press Play to retry.`);
   }
 
   function updatePlayButton() {
@@ -2357,6 +2380,7 @@
     elements.audioDuration.textContent = "Reading audio…";
     elements.audioDetails.classList.remove("is-hidden");
     elements.durationInput.disabled = true;
+    elements.audioInput.value = "";
     elements.audioPlayer.load();
   }
 
@@ -2396,6 +2420,7 @@
     elements.videoDetails.classList.remove("is-hidden");
     elements.videoPlayerWrap.classList.remove("is-hidden");
     elements.durationInput.disabled = true;
+    elements.videoInput.value = "";
     elements.videoPlayer.load();
   }
 
@@ -2774,8 +2799,8 @@
     elements.durationInput.disabled = state.audioUrl !== null || state.videoUrl !== null;
     elements.volumeInput.value = state.audioVolume;
     elements.videoVolumeInput.value = state.videoVolume;
-    elements.audioPlayer.volume = state.audioVolume;
-    elements.videoPlayer.volume = state.videoVolume;
+    if (elements.audioPlayer.volume !== state.audioVolume) elements.audioPlayer.volume = state.audioVolume;
+    if (elements.videoPlayer.volume !== state.videoVolume) elements.videoPlayer.volume = state.videoVolume;
     renderDancerList();
     renderSelection();
     renderSelectionControls();
@@ -2997,9 +3022,7 @@
       }
     });
     elements.audioPlayer.addEventListener("error", () => {
-      if (!state.audioUrl) return;
-      removeAudio(false);
-      showToast("The audio file could not be read by this browser.");
+      handleMediaPlaybackError("audio");
     });
     elements.videoInput.addEventListener("change", (event) => handleVideoFile(event.target.files[0]));
     elements.videoFileButton.addEventListener("click", () => elements.videoInput.click());
@@ -3024,9 +3047,7 @@
       }
     });
     elements.videoPlayer.addEventListener("error", () => {
-      if (!state.videoUrl) return;
-      removeVideo(false);
-      showToast("The video file could not be read by this browser.");
+      handleMediaPlaybackError("video");
     });
     elements.exportButton.addEventListener("click", exportProject);
     elements.exportPackageButton.addEventListener("click", exportCompleteProject);

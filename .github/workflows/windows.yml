@@ -31,6 +31,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Test desktop playback and recovery on Windows
+        run: npm run test:desktop
+
       - name: Package hardened Windows application
         run: npm run desktop:package
         env:

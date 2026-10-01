@@ -45,6 +45,8 @@ Select two or more dancers and activate **Align to path**, or press **A**, to dr
 
 Press **Space** while focus is outside a text-entry control to play or pause the choreography.
 
+If audio or video playback fails, the attachment stays in the project and in complete exports. Playback pauses safely; press **Play** to reload the retained file and retry from the current playhead. Remove or replace the attachment if the file itself cannot be decoded.
+
 Audio and video remain local to the device. **Export JSON** creates a portable choreography-only plan. **Export complete** creates a validated `.formation` package containing the choreography, stage dimensions, volume settings, audio, and video. Complete web packages are bounded to 1 GB. Import accepts both formats; JSON import keeps currently loaded media, while complete-project import replaces it with the packaged media. Version 4 projects save stage dimensions; older version 1–3 projects remain supported and open at 1× width and 1× depth. Music and video have independent volume controls. The app starts in dark mode and remembers any later theme choice in that browser.
 
 The interface adapts automatically to narrow screens and touch input. Mobile layouts use larger touch targets, reorganized transport controls, a cast-first side panel, and stage scrolling that remains available outside draggable dancer markers.
@@ -56,6 +58,8 @@ On touch phones in landscape orientation, the stage and transport occupy the lef
 ```bash
 npm test
 ```
+
+Run the desktop playback regression with `npm run test:desktop`. It launches Electron in an isolated temporary profile and checks repeated stage flips, sustained playback, decoder errors, retained-media export, retry, cancellation, seeking, and media replacement. The Windows build runs this regression before packaging.
 
 ## Windows desktop edition
 

@@ -676,6 +676,41 @@
     return requestId === currentRequestId || (!isPlaying && !isStartingPlayback);
   }
 
+  function waitForMediaReady(player, { signal, timeoutMs = 10000 } = {}) {
+    return new Promise((resolve, reject) => {
+      let timer;
+      const finish = (error) => {
+        clearTimeout(timer);
+        player.removeEventListener("loadedmetadata", check);
+        player.removeEventListener("durationchange", check);
+        player.removeEventListener("error", onError);
+        signal?.removeEventListener("abort", onAbort);
+        if (error) reject(error);
+        else resolve();
+      };
+      const onError = () => finish(new Error("Media could not be loaded"));
+      const onAbort = () => {
+        const error = new Error("Playback start cancelled");
+        error.name = "AbortError";
+        finish(error);
+      };
+      const check = () => {
+        if (player.error) onError();
+        else if (player.readyState >= 1 && Number.isFinite(player.duration) && player.duration > 0) finish();
+      };
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      player.addEventListener("loadedmetadata", check);
+      player.addEventListener("durationchange", check);
+      player.addEventListener("error", onError);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      timer = setTimeout(() => finish(new Error("Media loading timed out")), timeoutMs);
+      check();
+    });
+  }
+
   function isValidProjectData(candidate, maxDancers = 50) {
     if (!candidate || typeof candidate !== "object") return false;
     if (!Array.isArray(candidate.dancers) || candidate.dancers.length > maxDancers) return false;
@@ -804,6 +839,7 @@
     undoHistory,
     upsertKeyframe,
     upsertPositionKeyframe,
+    waitForMediaReady,
     zoomTimelineViewport,
   };
 
