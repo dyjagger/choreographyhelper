@@ -21,6 +21,7 @@ const {
   getLatestKeyframeTime,
   getPolylineLength,
   getPositionAtTime,
+  getProjectCoordinateCompatibility,
   getStageBoundsForDimensions,
   getNextAvailableDancerNumber,
   hasPointerMoved,
@@ -46,8 +47,83 @@ const {
   undoHistory,
   upsertKeyframe,
   upsertPositionKeyframe,
+  upgradeProjectCoordinates,
   zoomTimelineViewport,
 } = require("./core.js");
+
+function createLegacyLayoutProject() {
+  return {
+    version: 4, projectTitle: "Legacy fixture", duration: 30, dancerCounter: 1,
+    stageOrientation: "front-top", stageWidth: 1.25, stageDepth: 1.5,
+    audioVolume: 0.7, videoVolume: 0.3,
+    dancers: [{ id: "legacy-dancer", number: 1, name: "Left", color: "#7156d9", keyframes: [
+      { time: 0, x: 12.125, y: 20 },
+      { time: 5.123456, x: 24.375, y: 40, hold: true },
+      { time: 10.654321, x: 24.375, y: 40, hold: false },
+      { time: 23.456789, x: 83.375, y: 60 },
+    ] }],
+  };
+}
+
+test("coordinate compatibility distinguishes dated legacy packages from ambiguous v4 exports", () => {
+  const project = createLegacyLayoutProject();
+  assert.equal(getProjectCoordinateCompatibility(project, "2026-09-18T02:56:21.782Z"), "legacy");
+  for (const date of [undefined, "not a date", "2026-09-30T18:49:37.000Z", "2026-10-02T08:35:06.000Z"]) {
+    assert.equal(getProjectCoordinateCompatibility(project, date), "unknown");
+  }
+  assert.equal(getProjectCoordinateCompatibility({ ...project, version: 3 }), "legacy");
+  assert.equal(getProjectCoordinateCompatibility({ ...project, version: 5 }, "2026-09-18T02:56:21.782Z"), "current");
+  assert.equal(getProjectCoordinateCompatibility({ ...project, stageOrientation: "front-bottom" }, "2026-09-18T02:56:21.782Z"), "current");
+});
+
+test("legacy coordinate conversion preserves the original view, interpolation, holds, times and stage size", () => {
+  const original = createLegacyLayoutProject();
+  const before = structuredClone(original);
+  const restored = upgradeProjectCoordinates(original, { packageCreatedAt: "2026-09-18T02:56:21.782Z" });
+  const expected = structuredClone(original);
+  expected.version = 5;
+  expected.dancers[0].keyframes.forEach(frame => { frame.x = Math.round((100 - frame.x) * 1000) / 1000; });
+  assert.deepEqual(restored, expected);
+  assert.deepEqual(original, before, "Conversion must not mutate the source project");
+  assert.equal(isValidProjectData(restored), true);
+  for (const time of [0, 2.5, 5.123456, 7.5, 10.654321, 15, 23.456789, 30]) {
+    const oldPosition = getPositionAtTime(original.dancers[0].keyframes, time);
+    const view = stageToDisplayPosition(getPositionAtTime(restored.dancers[0].keyframes, time), "front-top");
+    assert.ok(Math.abs(view.x - oldPosition.x) <= 0.0011);
+    assert.ok(Math.abs(view.y - (100 - oldPosition.y)) <= 0.0011);
+  }
+});
+
+test("converted and new v5 projects cannot be mirrored again during import or reload", () => {
+  const restored = upgradeProjectCoordinates(createLegacyLayoutProject(), { restoreLegacyLeftRight: true });
+  for (let i = 0; i < 5; i++) {
+    assert.deepEqual(upgradeProjectCoordinates(restored, { packageCreatedAt: "2026-09-18T02:56:21.782Z", restoreLegacyLeftRight: true }), restored);
+  }
+  assert.deepEqual(upgradeProjectCoordinates({ ...restored, stageOrientation: "front-bottom" }), { ...restored, stageOrientation: "front-bottom" });
+});
+
+test("ambiguous projects keep their coordinates and remain unversioned until a layout choice", () => {
+  const original = createLegacyLayoutProject();
+  assert.deepEqual(upgradeProjectCoordinates(original), original);
+  assert.deepEqual(upgradeProjectCoordinates(original, { restoreLegacyLeftRight: false }), { ...original, version: 5 });
+  assert.equal(upgradeProjectCoordinates(original, { restoreLegacyLeftRight: true }).dancers[0].keyframes[0].x, 87.875);
+  const bottom = { ...original, stageOrientation: "front-bottom" };
+  assert.deepEqual(upgradeProjectCoordinates(bottom, { restoreLegacyLeftRight: true }), { ...bottom, version: 5 });
+});
+
+test("older coordinate formats gain default stage dimensions and v5 validates its required dimensions", () => {
+  const legacy = createLegacyLayoutProject();
+  legacy.version = 3;
+  delete legacy.stageWidth;
+  delete legacy.stageDepth;
+  const restored = upgradeProjectCoordinates(legacy);
+  assert.equal(restored.stageWidth, 1);
+  assert.equal(restored.stageDepth, 1);
+  assert.equal(restored.version, 5);
+  assert.equal(isValidProjectData(restored), true);
+  assert.equal(isValidProjectData({ ...restored, stageWidth: undefined }), false);
+  assert.equal(isValidProjectData({ ...restored, version: 6 }), false);
+});
 
 test("stage orientation mirrors both coordinates and round-trips", () => {
   const stored = { x: 22.25, y: 84.75 };

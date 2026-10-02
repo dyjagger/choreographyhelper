@@ -28,6 +28,32 @@
   gap: 10px;
 }
 
+.confirmation-layout-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.confirmation-layout-option input {
+  flex: none;
+  margin-top: 5px;
+}
+
+.legacy-layout-review {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--purple);
+  border-radius: 12px;
+  background: var(--purple-soft);
+}
+
+.legacy-layout-review p {
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
 :root {
   color-scheme: light;
   --ink: #20212a;

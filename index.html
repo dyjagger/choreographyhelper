@@ -47,6 +47,14 @@
         </div>
       </header>
 
+      <section id="legacy-layout-review" class="legacy-layout-review is-hidden" aria-label="Older project layout">
+        <p>This older project may show its formations reversed left/right. If the layout looks wrong, restore the older layout; otherwise keep the current layout.</p>
+        <div class="confirmation-actions">
+          <button id="restore-legacy-layout-button" class="button button-quiet" type="button">Restore older layout</button>
+          <button id="keep-current-layout-button" class="button button-quiet" type="button">Keep current layout</button>
+        </div>
+      </section>
+
       <main class="workspace">
         <section class="editor-column" aria-label="Choreography editor">
           <div class="stage-card">
@@ -386,6 +394,10 @@
       <form method="dialog">
         <h2 id="confirmation-title"></h2>
         <p id="confirmation-message"></p>
+        <label id="confirmation-layout-option" class="confirmation-layout-option is-hidden">
+          <input id="confirmation-legacy-layout" type="checkbox" />
+          Restore the original left/right layout (projects made before v0.5.5).
+        </label>
         <div class="confirmation-actions">
           <button id="confirmation-cancel-button" class="button button-quiet" type="submit" value="cancel" autofocus>Cancel</button>
           <button id="confirmation-accept-button" class="button button-primary" type="submit" value="confirm"></button>

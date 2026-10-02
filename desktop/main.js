@@ -37,16 +37,16 @@ app.enableSandbox();
 function getProjectPathFromArgs(args) {
   return args
     .map((argument) => path.resolve(String(argument)))
-    .find((candidate) => /\.(formation|json)$/i.test(candidate) && fs.existsSync(candidate)) || null;
+    .find((candidate) => /\.(formation(?:\.zip)?|json)$/i.test(candidate) && fs.existsSync(candidate)) || null;
 }
 
 function getProjectMimeType(filePath) {
-  return /\.formation$/i.test(filePath) ? "application/zip" : "application/json";
+  return /\.formation(?:\.zip)?$/i.test(filePath) ? "application/zip" : "application/json";
 }
 
 async function createOpenDescriptor(filePath) {
   const resolvedPath = path.resolve(filePath);
-  if (!/\.(formation|json)$/i.test(resolvedPath)) throw new Error("Unsupported project type");
+  if (!/\.(formation(?:\.zip)?|json)$/i.test(resolvedPath)) throw new Error("Unsupported project type");
   const stats = await fs.promises.stat(resolvedPath);
   if (!stats.isFile() || stats.size <= 0 || stats.size > MAX_PROJECT_BYTES) throw new Error("Project file is too large");
   const token = randomUUID();
@@ -250,8 +250,8 @@ else {
         title: "Open Formation Studio project",
         properties: ["openFile"],
         filters: [
-          { name: "Formation Studio projects", extensions: ["formation", "json"] },
-          { name: "Complete project", extensions: ["formation"] },
+          { name: "Formation Studio projects", extensions: ["formation", "json", "zip"] },
+          { name: "Complete project", extensions: ["formation", "zip"] },
           { name: "JSON plan", extensions: ["json"] },
         ],
       });

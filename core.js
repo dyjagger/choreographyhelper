@@ -9,6 +9,10 @@
   const MAX_TOTAL_KEYFRAMES = 50000;
   const STAGE_ORIENTATION_FRONT_BOTTOM = "front-bottom";
   const STAGE_ORIENTATION_FRONT_TOP = "front-top";
+  const PROJECT_FORMAT_VERSION = 5;
+  // First commit with 180-degree stage rotation. Earlier packages definitely
+  // used screen-relative X; later v4 exports can come from either app version.
+  const STAGE_ROTATION_FIX_DATE = "2026-09-30T18:49:37.000Z";
   const MIN_STAGE_SIZE = 1;
   const MAX_STAGE_SIZE = 4;
   const DEFAULT_STAGE_BOUNDS = Object.freeze({ minX: 2.5, maxX: 97.5, minY: 4, maxY: 96 });
@@ -25,6 +29,36 @@
     return value === STAGE_ORIENTATION_FRONT_TOP
       ? STAGE_ORIENTATION_FRONT_TOP
       : STAGE_ORIENTATION_FRONT_BOTTOM;
+  }
+
+  function getProjectCoordinateCompatibility(project, packageCreatedAt) {
+    const version = Number(project.version ?? 1);
+    if (version >= PROJECT_FORMAT_VERSION || normalizeStageOrientation(project.stageOrientation) !== STAGE_ORIENTATION_FRONT_TOP) return "current";
+    if (version < 4) return "legacy";
+    const createdAt = typeof packageCreatedAt === "string" ? Date.parse(packageCreatedAt) : NaN;
+    if (Number.isFinite(createdAt) && createdAt < Date.parse(STAGE_ROTATION_FIX_DATE)) return "legacy";
+    return "unknown";
+  }
+
+  function upgradeProjectCoordinates(project, options = {}) {
+    const compatibility = getProjectCoordinateCompatibility(project, options.packageCreatedAt);
+    const restoreLegacy = compatibility !== "current" && (options.restoreLegacyLeftRight ?? compatibility === "legacy");
+    const reviewed = compatibility !== "unknown" || typeof options.restoreLegacyLeftRight === "boolean";
+    return {
+      ...project,
+      version: reviewed ? PROJECT_FORMAT_VERSION : 4,
+      stageWidth: project.stageWidth ?? 1,
+      stageDepth: project.stageDepth ?? 1,
+      dancers: project.dancers.map((dancer) => ({
+        ...dancer,
+        keyframes: dancer.keyframes.map((frame) => ({
+          ...frame,
+          // Preserve the old saved top-front view. Times, Y, holds and media
+          // remain unchanged; v5 prevents subsequent imports mirroring again.
+          ...(restoreLegacy ? { x: roundCoordinate(100 - Number(frame.x)) } : {}),
+        })),
+      })),
+    };
   }
 
   function normalizeStageSize(value, fallback = 1) {
@@ -716,7 +750,7 @@
   function isValidProjectData(candidate, maxDancers = 50) {
     if (!candidate || typeof candidate !== "object") return false;
     if (!Array.isArray(candidate.dancers) || candidate.dancers.length > maxDancers) return false;
-    if (candidate.version !== undefined && ![1, 2, 3, 4].includes(Number(candidate.version))) return false;
+    if (candidate.version !== undefined && ![1, 2, 3, 4, 5].includes(Number(candidate.version))) return false;
     for (const sizeKey of ["stageWidth", "stageDepth"]) {
       if (
         candidate[sizeKey] !== undefined &&
@@ -724,7 +758,7 @@
           Number(candidate[sizeKey]) < MIN_STAGE_SIZE || Number(candidate[sizeKey]) > MAX_STAGE_SIZE)
       ) return false;
     }
-    if (Number(candidate.version) === 4 && (candidate.stageWidth === undefined || candidate.stageDepth === undefined)) return false;
+    if (Number(candidate.version) >= 4 && (candidate.stageWidth === undefined || candidate.stageDepth === undefined)) return false;
     if (
       candidate.stageOrientation !== undefined &&
       ![STAGE_ORIENTATION_FRONT_BOTTOM, STAGE_ORIENTATION_FRONT_TOP].includes(candidate.stageOrientation)
@@ -799,6 +833,8 @@
     MAX_STAGE_SIZE,
     MIN_STAGE_SIZE,
     TIME_EPSILON,
+    PROJECT_FORMAT_VERSION,
+    STAGE_ROTATION_FIX_DATE,
     STAGE_ORIENTATION_FRONT_BOTTOM,
     STAGE_ORIENTATION_FRONT_TOP,
     applyGroupDelta,
@@ -815,6 +851,7 @@
     getLatestKeyframeTime,
     getPolylineLength,
     getPositionAtTime,
+    getProjectCoordinateCompatibility,
     getNextAvailableDancerNumber,
     hasPointerMoved,
     ensureTimeInTimelineViewport,
@@ -841,6 +878,7 @@
     undoHistory,
     upsertKeyframe,
     upsertPositionKeyframe,
+    upgradeProjectCoordinates,
     waitForMediaReady,
     zoomTimelineViewport,
   };

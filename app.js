@@ -3,6 +3,7 @@
 
   const {
     MAX_DANCER_COUNTER,
+    PROJECT_FORMAT_VERSION,
     TIME_EPSILON,
     applyGroupDelta,
     areDocumentSnapshotsEqual,
@@ -18,6 +19,7 @@
     getPolylineLength,
     getNextAvailableDancerNumber,
     getPositionAtTime,
+    getProjectCoordinateCompatibility,
     getStageBoundsForDimensions,
     hasPointerMoved,
     isValidProjectData,
@@ -36,6 +38,7 @@
     undoHistory,
     upsertKeyframe,
     upsertPositionKeyframe,
+    upgradeProjectCoordinates,
     waitForMediaReady,
     displayToStagePosition,
     normalizeStageOrientation,
@@ -92,6 +95,8 @@
     confirmationTitle: document.querySelector("#confirmation-title"),
     confirmationMessage: document.querySelector("#confirmation-message"),
     confirmationAcceptButton: document.querySelector("#confirmation-accept-button"),
+    confirmationLayoutOption: document.querySelector("#confirmation-layout-option"),
+    confirmationLegacyLayout: document.querySelector("#confirmation-legacy-layout"),
     coordinateEditor: document.querySelector("#coordinate-editor"),
     dancerCount: document.querySelector("#dancer-count"),
     dancerList: document.querySelector("#dancer-list"),
@@ -121,6 +126,9 @@
     importButton: document.querySelector("#import-button"),
     keyframeList: document.querySelector("#keyframe-list"),
     keyframeTrack: document.querySelector("#keyframe-track"),
+    legacyLayoutReview: document.querySelector("#legacy-layout-review"),
+    restoreLegacyLayoutButton: document.querySelector("#restore-legacy-layout-button"),
+    keepCurrentLayoutButton: document.querySelector("#keep-current-layout-button"),
     markerLayer: document.querySelector("#marker-layer"),
     newDancerNameInput: document.querySelector("#new-dancer-name"),
     newProjectButton: document.querySelector("#new-project-button"),
@@ -206,6 +214,7 @@
     playbackRequestId: 0,
     playbackStartedAt: 0,
     projectTitle: "Untitled choreography",
+    projectFormatVersion: PROJECT_FORMAT_VERSION,
     rafId: null,
     selectedDancerId: null,
     selectedDancerIds: [],
@@ -383,6 +392,8 @@
       elements.exportPackageButton,
       elements.importButton,
       elements.replaceLocalSaveButton,
+      elements.restoreLegacyLayoutButton,
+      elements.keepCurrentLayoutButton,
       elements.frontTopButton,
       elements.frontBottomButton,
       elements.playButton,
@@ -981,11 +992,13 @@
   }
 
   function replaceDocumentData(project, options = {}) {
+    project = upgradeProjectCoordinates(project);
     const previousDuration = state.duration;
     const previousViewport = getTimelineViewport();
     const wasFullTimeline = previousViewport.start <= TIME_EPSILON &&
       previousViewport.end >= previousDuration - TIME_EPSILON;
     state.projectTitle = normalizeProjectTitle(project.projectTitle);
+    state.projectFormatVersion = project.version;
     state.stageOrientation = normalizeStageOrientation(project.stageOrientation);
     state.stageWidth = normalizeStageSize(project.stageWidth ?? 1);
     state.stageDepth = normalizeStageSize(project.stageDepth ?? 1);
@@ -1112,7 +1125,7 @@
     };
   }
 
-  function confirmAction(title, message, acceptLabel) {
+  function confirmAction(title, message, acceptLabel, options = {}) {
     // Browser-native confirmation windows can leave desktop text inputs without
     // keyboard focus. Keep the prompt and focus restoration in this document.
     const dialog = elements.confirmationDialog;
@@ -1120,6 +1133,8 @@
     elements.confirmationTitle.textContent = title;
     elements.confirmationMessage.textContent = message;
     elements.confirmationAcceptButton.textContent = acceptLabel;
+    elements.confirmationLayoutOption.classList.toggle("is-hidden", !options.reviewLegacyLayout);
+    elements.confirmationLegacyLayout.checked = Boolean(options.restoreLegacyLeftRight);
     dialog.returnValue = "cancel";
     return new Promise((resolve) => {
       dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
@@ -1140,6 +1155,7 @@
     removeAudio(false);
     removeVideo(false);
     state.projectTitle = "Untitled choreography";
+    state.projectFormatVersion = PROJECT_FORMAT_VERSION;
     state.dancerCounter = 0;
     state.dancers = [];
     state.duration = 60;
@@ -2550,7 +2566,7 @@
 
   function serializeProject() {
     return {
-      version: 4,
+      version: state.projectFormatVersion,
       projectTitle: normalizeProjectTitle(state.projectTitle),
       duration: state.duration,
       dancerCounter: state.dancerCounter,
@@ -2694,16 +2710,19 @@
     const project = JSON.parse(await file.text());
     if (!isValidProjectData(project, MAX_DANCERS)) throw new Error("Invalid choreography file");
     const title = normalizeProjectTitle(project.projectTitle);
+    const compatibility = getProjectCoordinateCompatibility(project);
     const shouldImport = await confirmAction(
       "Import choreography?",
       `Replace this choreography with “${title}” (${project.dancers.length} dancers)? You can undo this import. Loaded media will stay in place.`,
       "Import choreography",
+      { reviewLegacyLayout: compatibility !== "current", restoreLegacyLeftRight: compatibility === "legacy" },
     );
     if (!shouldImport) return;
+    const upgradedProject = upgradeProjectCoordinates(project, { restoreLegacyLeftRight: elements.confirmationLegacyLayout.checked });
 
     pausePlayback();
     const changed = commitDocumentEdit("import plan", () => {
-      replaceDocumentData(project, { currentTime: 0 });
+      replaceDocumentData(upgradedProject, { currentTime: 0 });
     });
     if (changed) {
       setCurrentTime(0);
@@ -2738,12 +2757,18 @@
     const project = JSON.parse(await projectEntry.blob.text());
     if (!isValidProjectData(project, MAX_DANCERS)) throw new Error("Invalid packaged choreography");
     const title = normalizeProjectTitle(project.projectTitle);
+    const compatibility = getProjectCoordinateCompatibility(project, manifest.createdAt);
     const shouldImport = await confirmAction(
       "Open complete project?",
       `Open the complete project “${title}” (${project.dancers.length} dancers)? This replaces the current choreography and local media.`,
       "Open project",
+      { reviewLegacyLayout: compatibility !== "current", restoreLegacyLeftRight: compatibility === "legacy" },
     );
     if (!shouldImport) return;
+    const upgradedProject = upgradeProjectCoordinates(project, {
+      packageCreatedAt: manifest.createdAt,
+      restoreLegacyLeftRight: elements.confirmationLegacyLayout.checked,
+    });
 
     const createMediaFile = (descriptor, fallback) => {
       if (!descriptor) return null;
@@ -2758,7 +2783,7 @@
     const videoFile = createMediaFile(manifest.media.video, "reference-video");
     removeAudio(false);
     removeVideo(false);
-    applyProject(project, { clearHistory: true });
+    applyProject(upgradedProject, { clearHistory: true });
     if (audioFile) handleAudioFile(audioFile);
     if (videoFile) handleVideoFile(videoFile);
     showToast("Complete project opened with its saved media.");
@@ -2897,6 +2922,7 @@
   }
 
   function renderAll() {
+    elements.legacyLayoutReview.classList.toggle("is-hidden", state.projectFormatVersion >= PROJECT_FORMAT_VERSION || state.stageOrientation !== "front-top");
     if (document.activeElement !== elements.projectTitle) elements.projectTitle.value = state.projectTitle;
     elements.stage.dataset.orientation = state.stageOrientation;
     const isFrontTop = state.stageOrientation === "front-top";
@@ -2932,6 +2958,17 @@
     }
     pausePlayback();
     setCurrentTime(nextTime);
+  }
+
+  async function restoreLegacyLayout() {
+    if (!requireFinishedTransitionEdit() || state.projectFormatVersion >= PROJECT_FORMAT_VERSION) return;
+    const confirmed = await confirmAction("Restore older layout?", "Restore the left/right layout used before v0.5.5 across every recorded formation? Timing, holds, stage size, and media stay in place. You can undo this change.", "Restore layout");
+    if (!confirmed) return;
+    pausePlayback();
+    const snapshot = captureDocumentSnapshot();
+    const restored = upgradeProjectCoordinates(snapshot.project, { restoreLegacyLeftRight: true });
+    commitDocumentEdit("restore older left/right layout", () => replaceDocumentData(restored, snapshot));
+    showToast("Older left/right layout restored. Undo is available.");
   }
 
   function beginProjectTitleEdit() {
@@ -3080,6 +3117,12 @@
     elements.stage.addEventListener("pointerdown", startSelectionMarquee);
     elements.stage.addEventListener("pointerdown", startFormationPath);
     elements.newProjectButton.addEventListener("click", startNewProject);
+    elements.restoreLegacyLayoutButton.addEventListener("click", restoreLegacyLayout);
+    elements.keepCurrentLayoutButton.addEventListener("click", () => {
+      if (!requireFinishedTransitionEdit()) return;
+      commitDocumentEdit("keep current layout", () => { state.projectFormatVersion = PROJECT_FORMAT_VERSION; });
+      showToast("Current layout kept.");
+    });
     elements.themeToggle.addEventListener("click", toggleTheme);
     elements.undoButton.addEventListener("click", undoDocumentEdit);
     elements.redoButton.addEventListener("click", redoDocumentEdit);
@@ -3172,7 +3215,7 @@
     });
     window.addEventListener("drop", (event) => {
       const file = event.dataTransfer?.files?.[0];
-      if (!file || !/\.(formation|json)$/i.test(file.name)) return;
+      if (!file || !/\.(formation(?:\.zip)?|json)$/i.test(file.name)) return;
       event.preventDefault();
       importProject(file);
     });
