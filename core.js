@@ -388,6 +388,30 @@
     return intervals;
   }
 
+  function replaceTransitionWithHold(keyframes, time) {
+    const requestedTime = Number(time);
+    if (!Number.isFinite(requestedTime) || requestedTime < 0) return { ok: false, reason: "invalid-time" };
+    const frames = normalizeKeyframes(keyframes);
+    const arrival = frames.find((frame) => Math.abs(frame.time - requestedTime) <= TIME_EPSILON);
+    const end = arrival?.time ?? requestedTime;
+    const previous = frames.findLast((frame) => frame.time < end - TIME_EPSILON);
+    if (!previous) return { ok: false, reason: "no-previous-position" };
+    const holdState = getHoldStateFromFrames(frames, end);
+    // A hold that already spans this arrival needs no replacement or early end.
+    if (holdState.active && holdState.event.time < end - TIME_EPSILON) {
+      return { ok: true, keyframes: frames, start: previous.time, end };
+    }
+    const position = getPositionAtTime(frames, previous.time);
+    let nextFrames = upsertKeyframe(frames, { ...previous, ...position, hold: true });
+    nextFrames = upsertKeyframe(nextFrames, {
+      time: end,
+      ...position,
+      // End only the replaced movement. Preserve a hold starting at arrival.
+      hold: arrival?.hold === true,
+    });
+    return { ok: true, keyframes: nextFrames, start: previous.time, end };
+  }
+
   function positionsMatch(left, right, epsilon = POSITION_EPSILON) {
     return Boolean(left && right) &&
       Math.abs(Number(left.x) - Number(right.x)) <= epsilon &&
@@ -867,6 +891,7 @@
     panTimelineViewport,
     pushHistory,
     redoHistory,
+    replaceTransitionWithHold,
     samplePolyline,
     shouldPauseAfterPlaybackStartSettles,
     stageToDisplayPosition,

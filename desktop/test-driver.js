@@ -8,14 +8,14 @@ const net = require("node:net");
 const { spawn } = require("node:child_process");
 const { setTimeout: delay } = require("node:timers/promises");
 
-async function startDesktop(t) {
+async function startDesktop(t, options = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "formation-input-test-"));
   const server = net.createServer();
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
   await new Promise(resolve => server.close(resolve));
   const child = spawn(require("electron"), [
-    path.resolve(__dirname, ".."),
+    options.appPath || path.resolve(__dirname, ".."),
     ...(process.platform === "win32" ? [] : ["--headless", "--no-sandbox", "--disable-gpu"]),
     `--user-data-dir=${path.join(directory, "profile")}`, `--remote-debugging-port=${port}`,
   ], { stdio: ["ignore", "pipe", "pipe"] });
@@ -94,16 +94,16 @@ async function startDesktop(t) {
     }
     assert.fail(message);
   };
-  const click = async selector => {
+  const click = async (selector, modifiers = 0) => {
     const point = await evaluate(`(()=>{const element=document.querySelector(${JSON.stringify(selector)});
       if(!element)throw Error('Missing click target');element.scrollIntoView({block:'center',inline:'nearest'});
       const r=element.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};})()`);
-    await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
-    await send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", buttons: 1, clickCount: 1 });
-    await send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", buttons: 0, clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point, modifiers });
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, modifiers, button: "left", buttons: 1, clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, modifiers, button: "left", buttons: 0, clickCount: 1 });
   };
   const pressKey = async (key, code, modifiers = 0) => {
-    const virtualKey = { Tab: 9, Enter: 13, Escape: 27, Space: 32, Equal: 187, Minus: 189 }[code]
+    const virtualKey = { Tab: 9, Enter: 13, Escape: 27, Space: 32, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Equal: 187, Minus: 189 }[code]
       || (code.startsWith("Key") ? code.charCodeAt(3) : 0);
     const text = !(modifiers & 7) && key.length === 1 ? key : undefined;
     await send("Input.dispatchKeyEvent", { type: "keyDown", key, code, modifiers, windowsVirtualKeyCode: virtualKey, text });

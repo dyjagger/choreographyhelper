@@ -37,6 +37,7 @@ const {
   prepareFormationPath,
   pushHistory,
   redoHistory,
+  replaceTransitionWithHold,
   retimeHoldInterval,
   resizeStageDancers,
   resizeStagePosition,
@@ -347,6 +348,67 @@ test("editing a recorded position preserves hold and resume metadata", () => {
     { time: 10, x: 20, y: 30, hold: true },
     { time: 20, x: 80, y: 40, hold: false },
   ]);
+});
+
+test("replacing an arrival with a hold freezes the incoming transition and preserves later formations", () => {
+  const frames = [
+    { time: 0, x: 10, y: 20 }, { time: 5, x: 20, y: 30 },
+    { time: 10, x: 80, y: 60 }, { time: 20, x: 90, y: 80 },
+    { time: 30, x: 90, y: 80, hold: true }, { time: 35, x: 90, y: 80, hold: false },
+  ];
+  const original = structuredClone(frames);
+  const result = replaceTransitionWithHold(frames, 10);
+  assert.equal(result.ok, true);
+  assert.deepEqual(getHoldIntervals(result.keyframes), [
+    { start: 5, end: 10, x: 20, y: 30 }, { start: 30, end: 35, x: 90, y: 80 },
+  ]);
+  for (const time of [5, 7.5, 9.9, 10]) assert.deepEqual(getPositionAtTime(result.keyframes, time), { x: 20, y: 30 });
+  assert.deepEqual(getPositionAtTime(result.keyframes, 15), { x: 55, y: 55 });
+  assert.deepEqual(result.keyframes.filter(frame => frame.time > 10), frames.filter(frame => frame.time > 10));
+  assert.deepEqual(getPositionAtTime(result.keyframes, 2.5), getPositionAtTime(frames, 2.5));
+  assert.deepEqual(frames, original, "The source frames must remain unchanged");
+});
+
+test("a selected dancer without a frame at the edited time gains a bounded hold without losing its destination", () => {
+  const frames = [{ time: 0, x: 50, y: 20 }, { time: 20, x: 50, y: 70 }];
+  const result = replaceTransitionWithHold(frames, 10);
+  assert.deepEqual(result.keyframes, [
+    { time: 0, x: 50, y: 20, hold: true }, { time: 10, x: 50, y: 20, hold: false }, frames[1],
+  ]);
+  assert.deepEqual(getPositionAtTime(result.keyframes, 5), { x: 50, y: 20 });
+  assert.deepEqual(getPositionAtTime(result.keyframes, 20), { x: 50, y: 70 });
+});
+
+test("transition holds preserve fractional times and remain unchanged when applied repeatedly", () => {
+  const frames = [
+    { time: 0, x: 10, y: 20 }, { time: 5.123456, x: 20, y: 30 },
+    { time: 10.654321, x: 80, y: 60 }, { time: 20.987654, x: 90, y: 80 },
+  ];
+  const first = replaceTransitionWithHold(frames, 10.654321);
+  assert.deepEqual(first.keyframes.map(frame => frame.time), frames.map(frame => frame.time));
+  assert.deepEqual(replaceTransitionWithHold(first.keyframes, 10.654321).keyframes, first.keyframes);
+  assert.deepEqual(getPositionAtTime(first.keyframes, 8), { x: 20, y: 30 });
+});
+
+test("existing holds that span a transition stay active and retain their later resume", () => {
+  const frames = [
+    { time: 0, x: 10, y: 20, hold: true }, { time: 5, x: 80, y: 60 },
+    { time: 10, x: 90, y: 80 }, { time: 15, x: 10, y: 20, hold: false }, { time: 20, x: 50, y: 50 },
+  ];
+  assert.deepEqual(replaceTransitionWithHold(frames, 10).keyframes, frames);
+  assert.deepEqual(getPositionAtTime(frames, 12), { x: 10, y: 20 });
+  const startingHold = [{ time: 0, x: 10, y: 20 }, { time: 10, x: 80, y: 60, hold: true }, { time: 20, x: 80, y: 60, hold: false }];
+  const result = replaceTransitionWithHold(startingHold, 10);
+  assert.equal(result.keyframes[1].hold, true);
+  assert.deepEqual(result.keyframes[2], startingHold[2]);
+});
+
+test("a first formation has no incoming transition to replace", () => {
+  const frames = [{ time: 5, x: 20, y: 30 }, { time: 10, x: 80, y: 60 }];
+  assert.deepEqual(replaceTransitionWithHold(frames, 5), { ok: false, reason: "no-previous-position" });
+  assert.deepEqual(replaceTransitionWithHold([], 10), { ok: false, reason: "no-previous-position" });
+  assert.deepEqual(replaceTransitionWithHold(frames, -1), { ok: false, reason: "invalid-time" });
+  assert.deepEqual(replaceTransitionWithHold(frames, NaN), { ok: false, reason: "invalid-time" });
 });
 
 test("retiming a relocated resume preserves its arrival and creates real travel time", () => {

@@ -31,6 +31,7 @@
     prepareFormationPath,
     pushHistory,
     redoHistory,
+    replaceTransitionWithHold,
     retimeHoldInterval,
     resizeStageDancers,
     samplePolyline,
@@ -369,7 +370,7 @@
     elements.transitionEditBar.classList.toggle("is-hidden", !edit);
     elements.stage.classList.toggle("is-transition-editing", isEditing);
     elements.stageInstructions.textContent = edit
-      ? "Move dancers to preview this transition. Outlines show their original positions."
+      ? "Move dancers or choose Hold position to replace their movement. Apply changes when ready."
       : state.stageSizeEdit
         ? "Previewing the resized stage. The dashed outline shows the original boundary."
       : state.holdEdit
@@ -381,7 +382,7 @@
       elements.transitionEditTitle.textContent = `Editing transition at ${formatTime(edit.time)}`;
       const changedCount = edit.originalKeyframes.size;
       elements.transitionEditDetail.textContent = changedCount === 0
-        ? "Move dancers to preview the new formation. Outlines will show their original positions."
+        ? "Move dancers or choose Hold position to preview the change. Outlines show their original positions."
         : `${changedCount} dancer${changedCount === 1 ? "" : "s"} changed. Outlines show the original formation.`;
     }
 
@@ -417,7 +418,9 @@
     if (isEditing) {
       elements.undoButton.disabled = true;
       elements.redoButton.disabled = true;
-      elements.holdPositionButton.disabled = true;
+      elements.holdPositionButton.disabled = !edit || !getSelectedDancers().some((dancer) => (
+        replaceTransitionWithHold(edit.originalKeyframes.get(dancer.id) || dancer.keyframes, edit.time).ok
+      ));
       const selectedDancer = getSelectedDancer();
       const holdState = selectedDancer && edit ? getHoldStateAtTime(selectedDancer.keyframes, edit.time) : null;
       const canEditSelectedPosition = Boolean(edit && selectedDancer) && (
@@ -517,12 +520,15 @@
     }
 
     pausePlayback();
-    setSelectedDancerIds([dancerId], { primaryDancerId: dancerId, render: false });
+    setSelectedDancerIds(state.selectedDancerIds.includes(dancerId) ? state.selectedDancerIds : [dancerId], {
+      primaryDancerId: dancerId, render: false,
+    });
     setCurrentTime(frameTime);
     state.transitionEdit = {
       beforeSnapshot: captureDocumentSnapshot(),
       originalKeyframes: new Map(),
       originalPositions: new Map(),
+      holdDancerIds: new Set(),
       sourceDancerId: dancerId,
       time: frameTime,
     };
@@ -562,6 +568,7 @@
     }
 
     affectedDancers.forEach((dancer) => {
+      edit.holdDancerIds.delete(dancer.id);
       if (!edit.originalKeyframes.has(dancer.id)) {
         const originalFrames = normalizeKeyframes(dancer.keyframes);
         edit.originalKeyframes.set(dancer.id, originalFrames);
@@ -583,6 +590,33 @@
     const subject = options.subject || (affectedDancers.length === 1 ? affectedDancers[0].name : `${affectedDancers.length} dancers`);
     showToast(`${subject} previewed at ${formatTime(edit.time)}. Apply changes when ready.`);
     return true;
+  }
+
+  function previewSelectedTransitionHolds() {
+    const edit = state.transitionEdit;
+    if (!edit) return;
+    let previewedCount = 0;
+    getSelectedDancers().forEach((dancer) => {
+      const originalFrames = edit.originalKeyframes.get(dancer.id) || normalizeKeyframes(dancer.keyframes);
+      const replacement = replaceTransitionWithHold(originalFrames, edit.time);
+      if (!replacement.ok) return;
+      dancer.keyframes = replacement.keyframes;
+      if (JSON.stringify(replacement.keyframes) === JSON.stringify(originalFrames)) {
+        edit.originalKeyframes.delete(dancer.id);
+        edit.originalPositions.delete(dancer.id);
+        edit.holdDancerIds.delete(dancer.id);
+        return;
+      }
+      edit.originalKeyframes.set(dancer.id, originalFrames);
+      edit.originalPositions.set(dancer.id, getPositionAtTime(originalFrames, edit.time));
+      edit.holdDancerIds.add(dancer.id);
+      previewedCount++;
+    });
+    renderAll();
+    setSaveStatus("Transition preview not applied");
+    showToast(previewedCount
+      ? `${previewedCount} dancer${previewedCount === 1 ? "" : "s"} will hold their preceding positions through this transition. Apply changes when ready.`
+      : "Selected dancers already hold through this transition, or have no preceding position.");
   }
 
   function applyTransitionEdit() {
@@ -1848,7 +1882,26 @@
   function toggleSelectedHold() {
     const selectedDancers = getSelectedDancers();
     if (selectedDancers.length === 0) return;
+    if (state.transitionEdit) {
+      previewSelectedTransitionHolds();
+      return;
+    }
+    if (!requireFinishedTransitionEdit()) return;
     pausePlayback();
+    const primaryDancer = getSelectedDancer();
+    const candidates = [primaryDancer, ...selectedDancers.filter(dancer => dancer.id !== primaryDancer?.id)];
+    const target = candidates.map(dancer => ({
+      dancer,
+      frame: dancer?.keyframes.find(frame => Math.abs(frame.time - state.currentTime) <= TIME_EPSILON),
+    })).find(({ dancer, frame }) => (
+      frame && typeof frame.hold !== "boolean" && !isDancerHolding(dancer) &&
+      replaceTransitionWithHold(dancer.keyframes, frame.time).ok
+    ));
+    if (target) {
+      startTransitionEdit(target.dancer.id, target.frame.time);
+      previewSelectedTransitionHolds();
+      return;
+    }
     const holdStates = selectedDancers.map((dancer) => getHoldStateAtTime(dancer.keyframes, state.currentTime));
     const shouldEndHold = holdStates.every((holdState) => holdState.active);
     const changed = commitDocumentEdit(
@@ -2051,6 +2104,15 @@
 
   function updateHoldControl() {
     const selectedDancers = getSelectedDancers();
+    if (state.transitionEdit) {
+      const allPreviewed = selectedDancers.length > 0 && selectedDancers.every((dancer) => state.transitionEdit.holdDancerIds.has(dancer.id));
+      elements.holdPositionButton.disabled = selectedDancers.length === 0;
+      elements.holdPositionButton.setAttribute("aria-pressed", String(allPreviewed));
+      elements.holdPositionButton.classList.toggle("is-active", allPreviewed);
+      elements.holdPositionLabel.textContent = "Hold position";
+      elements.holdPositionButton.title = "Replace selected dancers' incoming movement with a hold (H)";
+      return;
+    }
     const holdingCount = selectedDancers.filter((dancer) => isDancerHolding(dancer)).length;
     const allHolding = selectedDancers.length > 0 && holdingCount === selectedDancers.length;
     elements.holdPositionButton.disabled = selectedDancers.length === 0;
@@ -3041,7 +3103,7 @@
 
     const key = event.key.toLowerCase();
     if (key === "h" && !event.shiftKey) {
-      if (isDocumentEditOpen() || elements.holdPositionButton.disabled) return;
+      if (state.holdEdit || state.stageSizeEdit || elements.holdPositionButton.disabled) return;
       event.preventDefault();
       elements.holdPositionButton.click();
       return;

@@ -31,7 +31,7 @@ async function packageDesktopApp() {
       /^\/README\.md$/,
       /^\/desktop\/(?:installer\.iss|package-app\.js|test-driver\.js)$/,
       /^\/desktop\/fixtures(?:\/|$)/,
-      /(?:^|\/)\w+\.test\.js$/,
+      /(?:^|\/)[^/]+\.test\.js$/,
       /^\/(?:ROADMAP|GAUNTLET_PROGRESS)\.md$/,
     ],
   });
