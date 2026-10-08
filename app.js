@@ -3,6 +3,8 @@
 
   const {
     MAX_DANCER_COUNTER,
+    MAX_TIMELINE_NOTES,
+    MAX_NOTE_TEXT_LENGTH,
     PROJECT_FORMAT_VERSION,
     TIME_EPSILON,
     applyGroupDelta,
@@ -25,6 +27,7 @@
     isValidProjectData,
     normalizeDancerName,
     normalizeKeyframes,
+    normalizeTimelineNotes,
     normalizeProjectTitle,
     normalizeTimelineViewport,
     orderPositionsAlongPath,
@@ -133,6 +136,19 @@
     markerLayer: document.querySelector("#marker-layer"),
     newDancerNameInput: document.querySelector("#new-dancer-name"),
     newProjectButton: document.querySelector("#new-project-button"),
+    noteTrack: document.querySelector("#note-track"),
+    noteAddLine: document.querySelector("#note-add-line"),
+    noteLayer: document.querySelector("#note-layer"),
+    notesAlwaysVisible: document.querySelector("#notes-always-visible"),
+    noteAnchorHint: document.querySelector("#note-anchor-hint"),
+    noteUseClickedTime: document.querySelector("#note-use-clicked-time"),
+    noteDialog: document.querySelector("#note-dialog"),
+    noteDialogTitle: document.querySelector("#note-dialog-title"),
+    noteForm: document.querySelector("#note-form"),
+    noteTimeInput: document.querySelector("#note-time-input"),
+    noteTextInput: document.querySelector("#note-text-input"),
+    noteSaveButton: document.querySelector("#note-save-button"),
+    noteDeleteButton: document.querySelector("#note-delete-button"),
     playButton: document.querySelector("#play-button"),
     playIcon: document.querySelector("#play-icon"),
     projectTitle: document.querySelector("#project-title"),
@@ -210,6 +226,9 @@
     isPlaying: false,
     isStartingPlayback: false,
     markerElements: new Map(),
+    notes: [],
+    notesAlwaysVisible: true,
+    noteAnchorTime: null,
     playbackAbortController: null,
     playbackOrigin: 0,
     playbackRequestId: 0,
@@ -236,6 +255,11 @@
   let saveTimer = null;
   let toastTimer = null;
   let projectTitleEditSnapshot = null;
+  let noteDialogDraft = null;
+  let noteDialogFocus = null;
+  let noteLayoutFrame = null;
+  let noteTrackWidth = 0;
+  let noteResizeObserver = null;
   const stageTouchPointers = new Map();
   let stagePinchGesture = null;
   let stageResizeObserver = null;
@@ -299,6 +323,10 @@
 
   function isDocumentEditOpen() {
     return Boolean(state.transitionEdit || state.holdEdit || state.stageSizeEdit);
+  }
+
+  function isModalDialogOpen() {
+    return elements.confirmationDialog.open || elements.noteDialog.open;
   }
 
   function isTransitionEditDirty() {
@@ -407,10 +435,13 @@
       elements.videoVolumeInput,
       elements.newDancerNameInput,
       elements.stageSizeButton,
+      elements.notesAlwaysVisible,
+      elements.noteUseClickedTime,
     ];
     alwaysUnlocked.forEach((control) => {
       control.disabled = isEditing;
     });
+    elements.noteAddLine.disabled = isEditing || state.notes.length >= MAX_TIMELINE_NOTES;
     elements.timeline.disabled = Boolean(edit);
     elements.timeInput.disabled = Boolean(edit);
     elements.durationInput.disabled = isEditing || state.audioUrl !== null || state.videoUrl !== null;
@@ -456,6 +487,8 @@
     pausePlayback();
     if (state.selectedDancerId !== dancerId) setSelectedDancerIds([dancerId], { primaryDancerId: dancerId });
     setCurrentTime(frameTime);
+    state.noteAnchorTime = frameTime;
+    renderNoteAnchorHint();
     // Seeking a label outside a zoomed view rebuilds the track. Keep keyboard
     // focus on the corresponding navigation control after that redraw.
     if (sourceControl && !sourceControl.isConnected) {
@@ -1002,7 +1035,12 @@
     const mediaDuration = Math.max(...durations);
     const latestFrame = getLatestKeyframeTime(state.dancers);
     if (!allowKeyframeFloor && mediaDuration < latestFrame) return false;
-    return updateDuration(Math.max(mediaDuration, allowKeyframeFloor ? latestFrame : 0));
+    const latestNote = state.notes.reduce((latest, note) => Math.max(latest, note.time), 0);
+    return updateDuration(Math.max(mediaDuration, latestNote, allowKeyframeFloor ? latestFrame : 0));
+  }
+
+  function getLatestProjectTime() {
+    return state.notes.reduce((latest, note) => Math.max(latest, note.time), getLatestKeyframeTime(state.dancers));
   }
 
   function captureDocumentSnapshot() {
@@ -1033,6 +1071,9 @@
       previousViewport.end >= previousDuration - TIME_EPSILON;
     state.projectTitle = normalizeProjectTitle(project.projectTitle);
     state.projectFormatVersion = project.version;
+    state.notes = normalizeTimelineNotes(project.notes);
+    state.notesAlwaysVisible = project.notesAlwaysVisible !== false;
+    state.noteAnchorTime = null;
     state.stageOrientation = normalizeStageOrientation(project.stageOrientation);
     state.stageWidth = normalizeStageSize(project.stageWidth ?? 1);
     state.stageDepth = normalizeStageSize(project.stageDepth ?? 1);
@@ -1060,7 +1101,7 @@
         keyframes: normalizeKeyframes(dancer.keyframes),
       };
     });
-    const latest = getLatestKeyframeTime(state.dancers);
+    const latest = getLatestProjectTime();
     state.duration = Math.max(state.duration, latest || 1);
     const loadedMediaDurations = getLoadedMediaPlayers()
       .map((player) => player.duration)
@@ -1192,6 +1233,9 @@
     state.projectFormatVersion = PROJECT_FORMAT_VERSION;
     state.dancerCounter = 0;
     state.dancers = [];
+    state.notes = [];
+    state.notesAlwaysVisible = true;
+    state.noteAnchorTime = null;
     state.duration = 60;
     state.timelineViewport = { start: 0, end: 60 };
     state.currentTime = 0;
@@ -2140,6 +2184,192 @@
         : "";
   }
 
+  function renderNoteAnchorHint() {
+    const pinned = state.noteAnchorTime !== null;
+    elements.noteAnchorHint.textContent = pinned
+      ? `Next note: selected formation at ${Number(state.noteAnchorTime.toFixed(6))} sec.`
+      : "Click the dashed line to add a note at that time.";
+    elements.noteUseClickedTime.classList.toggle("is-hidden", !pinned);
+    elements.noteAddLine.setAttribute("aria-label", pinned
+      ? `Add a note at selected formation time ${state.noteAnchorTime} seconds`
+      : "Add a timeline note at the clicked time; press Enter to use the current time");
+    elements.noteAddLine.title = elements.noteAnchorHint.textContent;
+  }
+
+  function openNoteDialog(time, noteId = null) {
+    if (isModalDialogOpen() || !requireFinishedTransitionEdit()) return;
+    const note = noteId === null ? null : state.notes.find(note => note.id === noteId);
+    if (noteId !== null && !note) return;
+    if (!note && state.notes.length >= MAX_TIMELINE_NOTES) {
+      showToast(`This project already has ${MAX_TIMELINE_NOTES} notes.`);
+      return;
+    }
+    pausePlayback();
+    const noteTime = note?.time ?? clamp(time, 0, state.duration);
+    noteDialogFocus = document.activeElement;
+    noteDialogDraft = { id: note?.id ?? crypto.randomUUID(), existing: Boolean(note) };
+    setCurrentTime(noteTime);
+    elements.noteDialogTitle.textContent = note ? "Edit timeline note" : "Add timeline note";
+    elements.noteTimeInput.max = state.duration;
+    elements.noteTimeInput.value = noteTime;
+    elements.noteTimeInput.setCustomValidity("");
+    elements.noteTextInput.value = note?.text ?? "";
+    elements.noteTextInput.maxLength = MAX_NOTE_TEXT_LENGTH;
+    elements.noteTextInput.setCustomValidity("");
+    elements.noteDeleteButton.classList.toggle("is-hidden", !note);
+    elements.noteDialog.showModal();
+    elements.noteTextInput.focus();
+  }
+
+  function saveTimelineNote(event) {
+    if (event.submitter !== elements.noteSaveButton) return;
+    event.preventDefault();
+    const draft = noteDialogDraft;
+    if (!draft) return;
+    const time = Number(elements.noteTimeInput.value);
+    const text = elements.noteTextInput.value.trim();
+    elements.noteTimeInput.setCustomValidity(Number.isFinite(time) && time >= 0 && time <= state.duration
+      ? "" : `Choose a time from 0 to ${state.duration} seconds.`);
+    elements.noteTextInput.setCustomValidity(text ? "" : "Enter a note.");
+    if (!elements.noteForm.reportValidity()) return;
+    elements.noteDialog.close("save");
+    const changed = commitDocumentEdit(draft.existing ? "edit timeline note" : "add timeline note", () => {
+      const note = { id: draft.id, time, text };
+      state.notes = normalizeTimelineNotes([...state.notes.filter(note => note.id !== draft.id), note]);
+    });
+    if (changed) {
+      setCurrentTime(time);
+      showToast(`Note saved at ${Number(time.toFixed(6))} sec.`);
+    }
+  }
+
+  function deleteTimelineNote() {
+    const draft = noteDialogDraft;
+    if (!draft?.existing) return;
+    elements.noteDialog.close("delete");
+    commitDocumentEdit("delete timeline note", () => {
+      state.notes = state.notes.filter(note => note.id !== draft.id);
+    });
+    showToast("Note deleted. Undo is available.");
+  }
+
+  function renderTimelineNotes() {
+    const viewport = getTimelineViewport();
+    const visible = state.notes.filter(note => note.time >= viewport.start && note.time <= viewport.end);
+    const fragment = document.createDocumentFragment();
+    elements.notesAlwaysVisible.checked = state.notesAlwaysVisible;
+    elements.noteTrack.classList.toggle("notes-show-text", state.notesAlwaysVisible);
+    visible.forEach(note => {
+      const marker = document.createElement("button");
+      marker.type = "button";
+      marker.className = "timeline-note-marker";
+      marker.dataset.noteId = note.id;
+      marker.dataset.noteTime = note.time;
+      marker.setAttribute("aria-label", `Edit note at ${note.time} seconds: ${note.text}`);
+      marker.title = `${Number(note.time.toFixed(6))} sec: ${note.text}`;
+      marker.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="2" width="14" height="16" rx="1.5"/><path d="M6 6h8M6 10h8M6 14h5"/></svg>';
+      marker.disabled = isDocumentEditOpen();
+      marker.addEventListener("click", () => openNoteDialog(note.time, note.id));
+      fragment.append(marker);
+      if (state.notesAlwaysVisible) {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "timeline-note-card";
+        card.dataset.noteId = note.id;
+        card.setAttribute("aria-label", `Edit note at ${note.time} seconds: ${note.text}`);
+        card.disabled = isDocumentEditOpen();
+        card.addEventListener("click", () => openNoteDialog(note.time, note.id));
+        const timestamp = document.createElement("span");
+        timestamp.className = "note-card-time";
+        timestamp.textContent = `${Number(note.time.toFixed(6))} sec`;
+        const text = document.createElement("span");
+        text.className = "note-card-text";
+        text.textContent = note.text;
+        card.append(timestamp, text);
+        fragment.append(card);
+      }
+    });
+    elements.noteLayer.replaceChildren(fragment);
+    renderNoteAnchorHint();
+    layoutTimelineNotes();
+  }
+
+  function layoutTimelineNotes() {
+    const width = elements.noteTrack.clientWidth;
+    if (!width) return;
+    noteTrackWidth = width;
+    const viewport = getTimelineViewport();
+    const markers = [...elements.noteLayer.querySelectorAll(".timeline-note-marker")];
+    const cards = new Map([...elements.noteLayer.querySelectorAll(".timeline-note-card")].map(card => [card.dataset.noteId, card]));
+    elements.noteLayer.querySelectorAll(".note-connector").forEach(connector => connector.remove());
+    const iconRows = [];
+    const cardRows = [];
+    // Wrap cards to the nearest gap, then stack collisions in separate rows.
+    // Marker rows keep even notes at the same timestamp individually clickable.
+    const items = markers.map(marker => ({ marker, card: cards.get(marker.dataset.noteId),
+      anchor: clamp((Number(marker.dataset.noteTime) - viewport.start) / (viewport.end - viewport.start), 0, 1) * width }));
+    items.forEach((item, index) => {
+      item.iconTop = 24;
+      if (!state.notesAlwaysVisible) {
+        let iconRow = iconRows.findIndex(right => item.anchor - 12 >= right + 4);
+        if (iconRow < 0) iconRow = iconRows.length;
+        iconRows[iconRow] = item.anchor + 12;
+        item.iconTop = 24 + iconRow * 28;
+      }
+      item.marker.style.left = `${item.anchor}px`;
+      item.marker.style.top = `${item.iconTop}px`;
+      if (!item.card) return;
+      const nearestGap = Math.min(index ? item.anchor - items[index - 1].anchor : Infinity,
+        index < items.length - 1 ? items[index + 1].anchor - item.anchor : Infinity);
+      const cardWidth = Math.min(width, clamp(nearestGap - 8, 120, 256));
+      item.left = clamp(item.anchor - cardWidth / 2, 0, width - cardWidth);
+      let row = cardRows.findIndex(lane => item.left >= lane.right + 8);
+      if (row < 0) { row = cardRows.length; cardRows.push({ right: 0, height: 0 }); }
+      cardRows[row].right = item.left + cardWidth;
+      item.row = row;
+      item.width = cardWidth;
+      item.card.style.left = `${item.left}px`;
+      item.card.style.width = `${cardWidth}px`;
+    });
+    // Cards in separate rows can use the spare horizontal space in that row.
+    cardRows.forEach((row, index) => {
+      const rowItems = items.filter(item => item.card && item.row === index);
+      rowItems.forEach((item, i) => {
+        const leftBound = i ? rowItems[i - 1].left + rowItems[i - 1].width + 8 : 0;
+        const rightBound = i + 1 < rowItems.length ? rowItems[i + 1].left - 8 : width;
+        item.width = Math.min(256, rightBound - leftBound);
+        item.left = clamp(item.anchor - item.width / 2, leftBound, rightBound - item.width);
+        item.card.style.left = `${item.left}px`;
+        item.card.style.width = `${item.width}px`;
+      });
+    });
+    const iconHeight = iconRows.length ? 24 + iconRows.length * 28 : 28;
+    items.forEach(item => {
+      if (item.card) cardRows[item.row].height = Math.max(cardRows[item.row].height, item.card.getBoundingClientRect().height);
+    });
+    let nextTop = iconHeight + 8;
+    cardRows.forEach(row => { row.top = nextTop; nextTop += row.height + 8; });
+    items.forEach(item => {
+      const top = item.card ? cardRows[item.row].top : item.iconTop + 12;
+      if (item.card) item.card.style.top = `${top}px`;
+      if (top > 14) {
+        const connector = document.createElement("span");
+        connector.className = "note-connector";
+        connector.dataset.noteTime = item.marker.dataset.noteTime;
+        connector.style.left = `${item.anchor}px`;
+        connector.style.top = "14px";
+        connector.style.height = `${top - 14}px`;
+        elements.noteLayer.append(connector);
+      }
+    });
+    elements.noteTrack.style.height = `${cardRows.length ? nextTop : iconHeight}px`;
+  }
+
+  function scheduleNoteLayout() {
+    if (noteLayoutFrame !== null) return;
+    noteLayoutFrame = requestAnimationFrame(() => { noteLayoutFrame = null; layoutTimelineNotes(); });
+  }
+
   function updateTimelineControls() {
     const viewport = getTimelineViewport();
     state.timelineViewport = viewport;
@@ -2168,6 +2398,7 @@
     }
     state.timelineViewport = next;
     renderSelection();
+    renderTimelineNotes();
     updateTimelineControls();
     updateKeyframeActiveState(true);
     return true;
@@ -2335,6 +2566,10 @@
 
   function setCurrentTime(nextTime, options = {}) {
     state.currentTime = clamp(nextTime, 0, state.duration);
+    if (state.noteAnchorTime !== null && Math.abs(state.currentTime - state.noteAnchorTime) > TIME_EPSILON) {
+      state.noteAnchorTime = null;
+      renderNoteAnchorHint();
+    }
     if (options.ensureVisible !== false) {
       const currentViewport = getTimelineViewport();
       const nextViewport = ensureTimeInTimelineViewport(
@@ -2346,6 +2581,7 @@
       if (!timelineViewportsMatch(currentViewport, nextViewport)) {
         state.timelineViewport = nextViewport;
         renderSelection();
+        renderTimelineNotes();
       }
     }
     updateTimelineControls();
@@ -2515,7 +2751,7 @@
   }
 
   function updateDuration(nextDuration, options = {}) {
-    const latestFrame = getLatestKeyframeTime(state.dancers);
+    const latestFrame = getLatestProjectTime();
     const numericDuration = Number(nextDuration);
     if (!Number.isFinite(numericDuration)) {
       elements.durationInput.value = Math.round(state.duration * 100) / 100;
@@ -2525,7 +2761,7 @@
     const requested = clamp(numericDuration, 1, 3600);
     if (requested < latestFrame) {
       elements.durationInput.value = Math.ceil(state.duration);
-      showToast(`Timeline must include the last position at ${formatTime(latestFrame)}.`);
+      showToast(`Timeline must include the last position or note at ${formatTime(latestFrame)}.`);
       return false;
     }
 
@@ -2542,6 +2778,7 @@
     elements.totalTime.textContent = formatTime(state.duration);
     setCurrentTime(state.currentTime, { syncMedia: false });
     renderSelection();
+    renderTimelineNotes();
     if (options.save !== false) queueSave();
     return true;
   }
@@ -2637,6 +2874,8 @@
       stageDepth: state.stageDepth,
       audioVolume: state.audioVolume,
       videoVolume: state.videoVolume,
+      ...(state.notes.length ? { notes: normalizeTimelineNotes(state.notes) } : {}),
+      ...(state.notesAlwaysVisible ? {} : { notesAlwaysVisible: false }),
       dancers: state.dancers.map((dancer) => ({
         id: dancer.id,
         number: dancer.number,
@@ -2852,7 +3091,7 @@
   }
 
   async function importProject(file) {
-    if (!file || elements.confirmationDialog.open) return;
+    if (!file || isModalDialogOpen()) return;
     if (!requireFinishedTransitionEdit()) return;
     const previousText = elements.importButton.textContent;
     elements.importButton.disabled = true;
@@ -2889,7 +3128,7 @@
   }
 
   async function handleDesktopCommand(command) {
-    if (elements.confirmationDialog.open) return;
+    if (isModalDialogOpen()) return;
     if (command === "new") elements.newProjectButton.click();
     else if (command === "undo") elements.undoButton.click();
     else if (command === "redo") elements.redoButton.click();
@@ -3004,6 +3243,7 @@
     renderDancerList();
     renderSelection();
     renderSelectionControls();
+    renderTimelineNotes();
     setCurrentTime(state.currentTime, { syncMedia: false });
     elements.totalTime.textContent = formatTime(state.duration);
     updateHistoryControls();
@@ -3070,7 +3310,7 @@
   }
 
   function handleHistoryShortcut(event) {
-    if (elements.confirmationDialog.open || isNativeEditingTarget(event.target) || event.altKey || (!event.ctrlKey && !event.metaKey)) return;
+    if (isModalDialogOpen() || isNativeEditingTarget(event.target) || event.altKey || (!event.ctrlKey && !event.metaKey)) return;
     const key = event.key.toLowerCase();
     const wantsUndo = key === "z" && !event.shiftKey;
     const wantsRedo = (key === "z" && event.shiftKey) || key === "y";
@@ -3084,14 +3324,14 @@
   }
 
   function handleStageToolShortcut(event) {
-    if (elements.confirmationDialog.open || event.key !== "Escape" || !state.activeStageTool || isNativeEditingTarget(event.target)) return;
+    if (isModalDialogOpen() || event.key !== "Escape" || !state.activeStageTool || isNativeEditingTarget(event.target)) return;
     event.preventDefault();
     setActiveStageTool(state.activeStageTool);
   }
 
   function handleAppShortcut(event) {
     if (
-      elements.confirmationDialog.open ||
+      isModalDialogOpen() ||
       event.defaultPrevented ||
       event.isComposing ||
       event.repeat ||
@@ -3134,6 +3374,35 @@
   }
 
   function bindEvents() {
+    elements.noteAddLine.addEventListener("click", event => {
+      const rect = elements.noteAddLine.getBoundingClientRect();
+      const viewport = getTimelineViewport();
+      const clickedTime = event.detail === 0 ? state.currentTime
+        : viewport.start + clamp((event.clientX - rect.left) / rect.width, 0, 1) * (viewport.end - viewport.start);
+      openNoteDialog(state.noteAnchorTime ?? Math.round(clickedTime * 1000000) / 1000000);
+    });
+    elements.noteUseClickedTime.addEventListener("click", () => {
+      state.noteAnchorTime = null;
+      renderNoteAnchorHint();
+    });
+    elements.notesAlwaysVisible.addEventListener("change", event => {
+      const visible = event.target.checked;
+      commitDocumentEdit("change note visibility", () => { state.notesAlwaysVisible = visible; });
+    });
+    elements.noteForm.addEventListener("submit", saveTimelineNote);
+    elements.noteDeleteButton.addEventListener("click", deleteTimelineNote);
+    elements.noteTextInput.addEventListener("input", () => elements.noteTextInput.setCustomValidity(""));
+    elements.noteTimeInput.addEventListener("input", () => elements.noteTimeInput.setCustomValidity(""));
+    elements.noteDialog.addEventListener("close", () => {
+      noteDialogDraft = null;
+      const previousFocus = noteDialogFocus;
+      requestAnimationFrame(() => {
+        if (elements.noteDialog.open) return;
+        const active = document.activeElement;
+        if (active !== document.body && active !== previousFocus && !elements.noteDialog.contains(active)) return;
+        (previousFocus?.isConnected ? previousFocus : elements.noteAddLine).focus({ preventScroll: true });
+      });
+    });
     elements.addDancerForm.addEventListener("submit", (event) => {
       event.preventDefault();
       addDancer();
@@ -3333,6 +3602,10 @@
     bindDesktopBridge();
     stageResizeObserver = new ResizeObserver(relayoutStageSurface);
     stageResizeObserver.observe(elements.stageViewport);
+    noteResizeObserver = new ResizeObserver(() => {
+      if (Math.abs(elements.noteTrack.clientWidth - noteTrackWidth) > 0.5) scheduleNoteLayout();
+    });
+    noteResizeObserver.observe(elements.noteTrack);
     requestAnimationFrame(layoutStageSurface);
     const restoreResult = restoreLocalProject();
     if (restoreResult !== "restored") {

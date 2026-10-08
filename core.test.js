@@ -32,6 +32,7 @@ const {
   normalizeTimelineViewport,
   normalizeProjectTitle,
   normalizeKeyframes,
+  normalizeTimelineNotes,
   orderPositionsAlongPath,
   panTimelineViewport,
   prepareFormationPath,
@@ -65,6 +66,45 @@ function createLegacyLayoutProject() {
     ] }],
   };
 }
+
+test("timeline notes preserve exact times, multiline text and duplicate-time notes without changing the input", () => {
+  const notes = [
+    { id: "second", time: 5.123456, text: "  Cue\nSecond line  " },
+    { id: "first", time: 0, text: "Opening" },
+    { id: "third", time: 5.123456, text: "Another cue" },
+  ];
+  const original = structuredClone(notes);
+  assert.deepEqual(normalizeTimelineNotes(notes), [
+    { id: "first", time: 0, text: "Opening" },
+    { id: "second", time: 5.123456, text: "Cue\nSecond line" },
+    { id: "third", time: 5.123456, text: "Another cue" },
+  ]);
+  assert.deepEqual(notes, original);
+  const project = { ...createLegacyLayoutProject(), version: 5, notes, notesAlwaysVisible: false };
+  assert.equal(isValidProjectData(project), true);
+  assert.equal(isValidProjectData({ ...project, notes: [] }), true);
+  assert.equal(isValidProjectData(createLegacyLayoutProject()), true);
+});
+
+test("invalid or oversized notes cannot enter a project", () => {
+  const project = createLegacyLayoutProject();
+  const note = { id: "cue", time: 5, text: "Hold for applause" };
+  for (const notes of [null, {}, [null], [{ ...note, id: "" }], [{ ...note, id: "x".repeat(81) }],
+    [note, { ...note }], [{ ...note, time: -1 }], [{ ...note, time: 31 }], [{ ...note, time: Infinity }],
+    [{ ...note, text: "  \n " }], [{ ...note, text: 123 }], [{ ...note, text: "x".repeat(2001) }],
+    Array.from({ length: 501 }, (_, index) => ({ ...note, id: String(index) }))]) {
+    assert.equal(isValidProjectData({ ...project, notes }), false);
+  }
+  assert.equal(isValidProjectData({ ...project, notesAlwaysVisible: "yes" }), false);
+});
+
+test("legacy coordinate restoration preserves all note times, text and visibility", () => {
+  const project = { ...createLegacyLayoutProject(), notes: [{ id: "cue", time: 5.123456, text: "Stage cue" }], notesAlwaysVisible: false };
+  const restored = upgradeProjectCoordinates(project, { restoreLegacyLeftRight: true });
+  assert.deepEqual(restored.notes, project.notes);
+  assert.equal(restored.notesAlwaysVisible, false);
+  assert.equal(restored.dancers[0].keyframes[0].x, 87.875);
+});
 
 test("coordinate compatibility distinguishes dated legacy packages from ambiguous v4 exports", () => {
   const project = createLegacyLayoutProject();

@@ -1,7 +1,7 @@
 {
   "name": "choreography-positioner",
   "productName": "Formation Studio",
-  "version": "0.5.11",
+  "version": "0.5.12",
   "private": true,
   "main": "desktop/main.js",
   "description": "A local-first browser choreography formation planner.",
@@ -10,7 +10,7 @@
     "desktop:start": "electron .",
     "desktop:package": "node desktop/package-app.js",
     "test": "node --test core.test.js package.test.js media.test.js",
-    "test:desktop": "node --test --test-concurrency=1 desktop/focus.test.js desktop/legacy.test.js desktop/navigation.test.js desktop/playback.test.js desktop/transition-hold.test.js"
+    "test:desktop": "node --test --test-concurrency=1 desktop/focus.test.js desktop/legacy.test.js desktop/navigation.test.js desktop/notes.test.js desktop/playback.test.js desktop/transition-hold.test.js"
   },
   "devDependencies": {
     "@electron/fuses": "^2.1.3",

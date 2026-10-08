@@ -230,6 +230,20 @@
                 aria-label="Choreography time"
               />
             </div>
+            <section class="timeline-notes" aria-label="Timeline notes">
+              <div class="timeline-notes-heading">
+                <span>Timeline notes</span>
+                <label class="notes-visibility-control"><input id="notes-always-visible" type="checkbox" checked /> Always visible</label>
+              </div>
+              <div id="note-track" class="note-track">
+                <button id="note-add-line" class="note-add-line" type="button" aria-label="Add a timeline note at the clicked time" title="Click anywhere along this dashed line to add a note."></button>
+                <div id="note-layer" class="note-layer"></div>
+              </div>
+              <div class="note-anchor-hint">
+                <span id="note-anchor-hint">Click the dashed line to add a note at that time.</span>
+                <button id="note-use-clicked-time" type="button" class="is-hidden">Use clicked time</button>
+              </div>
+            </section>
             <p class="timeline-hint">= / − keys zoom · Fit restores the full timeline</p>
 
             <div id="hold-edit-bar" class="transition-edit-bar hold-edit-bar is-hidden" aria-live="polite">
@@ -401,6 +415,19 @@
         <div class="confirmation-actions">
           <button id="confirmation-cancel-button" class="button button-quiet" type="submit" value="cancel" autofocus>Cancel</button>
           <button id="confirmation-accept-button" class="button button-primary" type="submit" value="confirm"></button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="note-dialog" class="confirmation-dialog note-dialog" aria-labelledby="note-dialog-title">
+      <form id="note-form" method="dialog">
+        <h2 id="note-dialog-title">Add timeline note</h2>
+        <label class="note-time-field" for="note-time-input">Time <input id="note-time-input" type="number" min="0" step="any" inputmode="decimal" required /> sec</label>
+        <label class="note-text-field" for="note-text-input">Note <textarea id="note-text-input" rows="5" maxlength="2000" placeholder="Add a cue, reminder, or stage direction…" required></textarea></label>
+        <div class="confirmation-actions">
+          <button id="note-delete-button" class="button button-quiet is-hidden" type="button">Delete note</button>
+          <button id="note-cancel-button" class="button button-quiet" type="submit" value="cancel" formnovalidate>Cancel</button>
+          <button id="note-save-button" class="button button-primary" type="submit" value="save">Save note</button>
         </div>
       </form>
     </dialog>

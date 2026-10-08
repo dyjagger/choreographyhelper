@@ -32,6 +32,10 @@ async function startDesktop(t, options = {}) {
       const stopped = new Promise(resolve => child.once("exit", resolve));
       child.kill();
       await Promise.race([stopped, delay(5000)]);
+      if (!exit) {
+        child.kill("SIGKILL");
+        await Promise.race([stopped, delay(5000)]);
+      }
     }
     await fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
@@ -88,7 +92,13 @@ async function startDesktop(t, options = {}) {
   };
   const waitFor = async (expression, message) => {
     for (let attempt = 0; attempt < 100; attempt++) {
-      if (await evaluate(expression)) return;
+      try {
+        if (await evaluate(expression)) return;
+      } catch (error) {
+        // A reload can replace the execution context between polling requests.
+        // Retry that transition only; application errors and crashes still fail.
+        if (!/Inspected target navigated or closed|Execution context was destroyed|Cannot find context with specified id/.test(error.message)) throw error;
+      }
       assert.equal(exit, undefined, log);
       await delay(50);
     }
@@ -105,7 +115,8 @@ async function startDesktop(t, options = {}) {
   const pressKey = async (key, code, modifiers = 0) => {
     const virtualKey = { Tab: 9, Enter: 13, Escape: 27, Space: 32, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Equal: 187, Minus: 189 }[code]
       || (code.startsWith("Key") ? code.charCodeAt(3) : 0);
-    const text = !(modifiers & 7) && key.length === 1 ? key : undefined;
+    // Native Enter activation needs its character event as well as keyDown.
+    const text = !(modifiers & 7) ? (code === "Enter" ? "\r" : key.length === 1 ? key : undefined) : undefined;
     await send("Input.dispatchKeyEvent", { type: "keyDown", key, code, modifiers, windowsVirtualKeyCode: virtualKey, text });
     await send("Input.dispatchKeyEvent", { type: "keyUp", key, code, modifiers, windowsVirtualKeyCode: virtualKey });
   };

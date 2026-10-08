@@ -7,6 +7,9 @@
   const MAX_DANCER_COUNTER = 1000000;
   const MAX_DANCER_ID_LENGTH = 160;
   const MAX_TOTAL_KEYFRAMES = 50000;
+  const MAX_TIMELINE_NOTES = 500;
+  const MAX_NOTE_TEXT_LENGTH = 2000;
+  const MAX_NOTE_ID_LENGTH = 80;
   const STAGE_ORIENTATION_FRONT_BOTTOM = "front-bottom";
   const STAGE_ORIENTATION_FRONT_TOP = "front-top";
   const PROJECT_FORMAT_VERSION = 5;
@@ -330,6 +333,11 @@
         return normalized;
       })
       .sort((a, b) => a.time - b.time);
+  }
+
+  function normalizeTimelineNotes(notes = []) {
+    return notes.map(note => ({ id: note.id, time: Number(note.time), text: note.text.trim() }))
+      .sort((left, right) => left.time - right.time || left.id.localeCompare(right.id));
   }
 
   function upsertKeyframe(keyframes, nextFrame, epsilon = TIME_EPSILON) {
@@ -797,6 +805,17 @@
     }
     const duration = Number(candidate.duration);
     if (!Number.isFinite(duration) || duration < 1 || duration > 3600) return false;
+    if (candidate.notesAlwaysVisible !== undefined && typeof candidate.notesAlwaysVisible !== "boolean") return false;
+    if (candidate.notes !== undefined) {
+      if (!Array.isArray(candidate.notes) || candidate.notes.length > MAX_TIMELINE_NOTES) return false;
+      const noteIds = new Set();
+      for (const note of candidate.notes) {
+        if (!note || typeof note.id !== "string" || !note.id.length || note.id.length > MAX_NOTE_ID_LENGTH || noteIds.has(note.id)) return false;
+        if (!Number.isFinite(Number(note.time)) || Number(note.time) < 0 || Number(note.time) > duration) return false;
+        if (typeof note.text !== "string" || !note.text.trim() || note.text.length > MAX_NOTE_TEXT_LENGTH) return false;
+        noteIds.add(note.id);
+      }
+    }
     if (
       candidate.dancerCounter !== undefined &&
       (!Number.isSafeInteger(Number(candidate.dancerCounter)) ||
@@ -854,6 +873,8 @@
     MAX_DANCER_COUNTER,
     MAX_DANCER_ID_LENGTH,
     MAX_TOTAL_KEYFRAMES,
+    MAX_TIMELINE_NOTES,
+    MAX_NOTE_TEXT_LENGTH,
     MAX_STAGE_SIZE,
     MIN_STAGE_SIZE,
     TIME_EPSILON,
@@ -881,6 +902,7 @@
     ensureTimeInTimelineViewport,
     isValidProjectData,
     normalizeKeyframes,
+    normalizeTimelineNotes,
     normalizeDancerName,
     normalizeStageOrientation,
     normalizeStageSize,

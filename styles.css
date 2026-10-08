@@ -1054,6 +1054,179 @@ input:focus-visible,
   text-align: right;
 }
 
+.timeline-notes {
+  margin: 14px 0 8px;
+}
+
+.timeline-notes-heading,
+.note-anchor-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px 12px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.notes-visibility-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.notes-visibility-control input {
+  margin: 0;
+  accent-color: var(--purple);
+}
+
+.note-track {
+  position: relative;
+  min-height: 28px;
+  margin: 4px 7px 0;
+}
+
+.note-add-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: crosshair;
+}
+
+.note-add-line::before {
+  position: absolute;
+  top: 14px;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--muted);
+  content: "";
+}
+
+.note-add-line:hover::before,
+.note-add-line:focus-visible::before {
+  border-color: var(--purple);
+}
+
+.note-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.timeline-note-marker {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 3px;
+  border: 1px solid var(--purple);
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--field-bg);
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.timeline-note-marker svg {
+  width: 16px;
+  height: 16px;
+}
+
+.notes-show-text .timeline-note-marker {
+  display: none;
+}
+
+.timeline-note-card {
+  position: absolute;
+  z-index: 2;
+  padding: 8px 10px;
+  border: 1px solid var(--chip-border);
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--field-bg);
+  text-align: left;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  pointer-events: auto;
+}
+
+.timeline-note-card:hover,
+.timeline-note-card:focus-visible,
+.timeline-note-marker:focus-visible {
+  border-color: var(--purple);
+  outline: 2px solid var(--purple-soft);
+  outline-offset: 2px;
+}
+
+.note-card-time {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.note-card-text {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.note-connector {
+  position: absolute;
+  z-index: 1;
+  border-left: 1px dashed var(--line);
+  pointer-events: none;
+}
+
+.note-anchor-hint button {
+  padding: 3px 0;
+  border: 0;
+  color: var(--purple);
+  background: transparent;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.note-time-field,
+.note-text-field {
+  display: block;
+  margin-bottom: 16px;
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
+.note-time-field input {
+  width: 120px;
+  margin: 0 6px;
+  padding: 7px;
+}
+
+.note-text-field textarea {
+  display: block;
+  width: 100%;
+  min-height: 130px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--field-bg);
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
 .timeline {
   position: relative;
   z-index: 2;
