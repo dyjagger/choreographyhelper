@@ -8,6 +8,8 @@ const { startDesktop } = require("./test-driver.js");
 
 test("timeline notes anchor exactly, wrap without overlap, survive history and media roundtrips, and protect typing", { timeout: 120000 }, async t => {
   const app = await startDesktop(t);
+  // Exercise fractional responsive widths independently of the host display.
+  await app.send("Emulation.setDeviceMetricsOverride", { width: 1024, height: 768, deviceScaleFactor: 1, mobile: false });
   const saved = async () => {
     await app.waitFor("document.querySelector('#save-status').textContent==='Saved locally'", "Project did not save");
     return app.evaluate("JSON.parse(localStorage.getItem('formation-studio-project-v1'))");
@@ -59,7 +61,7 @@ test("timeline notes anchor exactly, wrap without overlap, survive history and m
     }
     for (const anchor of layout.anchors) {
       const expectedX = layout.line.left + (anchor.time - layout.start) / (layout.end - layout.start) * (layout.line.right - layout.line.left);
-      assert.ok(Math.abs(anchor.left - expectedX) < 0.1, "A visible note moved away from its timestamp");
+      assert.ok(Math.abs(anchor.left - expectedX) < 0.1, `A visible note moved away from its timestamp: ${JSON.stringify({anchor,expectedX,track:layout.track,line:layout.line})}`);
     }
   };
   assert.equal(await app.evaluate("document.querySelector('#notes-always-visible').checked"), true);

@@ -2295,7 +2295,9 @@
   }
 
   function layoutTimelineNotes() {
-    const width = elements.noteTrack.clientWidth;
+    // Responsive padding and Windows display scaling can give a fractional width.
+    // Use the same measured width as click placement to keep anchors exact.
+    const width = elements.noteTrack.getBoundingClientRect().width;
     if (!width) return;
     noteTrackWidth = width;
     const viewport = getTimelineViewport();
@@ -3603,7 +3605,7 @@
     stageResizeObserver = new ResizeObserver(relayoutStageSurface);
     stageResizeObserver.observe(elements.stageViewport);
     noteResizeObserver = new ResizeObserver(() => {
-      if (Math.abs(elements.noteTrack.clientWidth - noteTrackWidth) > 0.5) scheduleNoteLayout();
+      if (Math.abs(elements.noteTrack.getBoundingClientRect().width - noteTrackWidth) > 0.01) scheduleNoteLayout();
     });
     noteResizeObserver.observe(elements.noteTrack);
     requestAnimationFrame(layoutStageSurface);

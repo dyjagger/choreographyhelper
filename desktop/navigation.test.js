@@ -84,7 +84,16 @@ test("timeline dots and recorded times seek the whole formation without opening 
   await assertAt(12, true);
   await app.click("#front-bottom-button");
   await app.click("#play-button");
-  await app.waitFor("document.querySelector('#play-button').getAttribute('aria-label')==='Pause choreography'", "Playback did not start");
+  try {
+    // Media readiness has a 10-second timeout; do not fail while it is pending.
+    await app.waitFor("document.querySelector('#play-button').getAttribute('aria-label')==='Pause choreography'", "Playback did not start", 15000);
+  } catch (error) {
+    const status = await app.evaluate(`({label:document.querySelector('#play-button').getAttribute('aria-label'),
+      time:document.querySelector('#time-input').value,toast:document.querySelector('#toast').textContent,
+      media:['#audio-player','#video-player'].map(id=>{const player=document.querySelector(id);return {id,readyState:player.readyState,
+        seeking:player.seeking,paused:player.paused,time:player.currentTime,error:player.error?.code};})})`);
+    assert.fail(`${error.message}: ${JSON.stringify(status)}`);
+  }
   await app.click(selector("label", 5));
   await assertAt(5);
   assert.equal(await app.evaluate("document.querySelector('#play-button').getAttribute('aria-label')"), "Play choreography");

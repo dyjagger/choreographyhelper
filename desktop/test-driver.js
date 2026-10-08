@@ -90,8 +90,8 @@ async function startDesktop(t, options = {}) {
     assert.equal(result.exceptionDetails, undefined, JSON.stringify(result.exceptionDetails));
     return result.result.value;
   };
-  const waitFor = async (expression, message) => {
-    for (let attempt = 0; attempt < 100; attempt++) {
+  const waitFor = async (expression, message, timeoutMs = 5000) => {
+    for (let attempt = 0; attempt < Math.ceil(timeoutMs / 50); attempt++) {
       try {
         if (await evaluate(expression)) return;
       } catch (error) {
