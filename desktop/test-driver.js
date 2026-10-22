@@ -14,9 +14,18 @@ async function startDesktop(t, options = {}) {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
   await new Promise(resolve => server.close(resolve));
+  let mainPort;
+  let mainSocket;
+  if (options.inspectMain) {
+    const inspector = net.createServer();
+    await new Promise(resolve => inspector.listen(0, "127.0.0.1", resolve));
+    mainPort = inspector.address().port;
+    await new Promise(resolve => inspector.close(resolve));
+  }
   const child = spawn(require("electron"), [
     options.appPath || path.resolve(__dirname, ".."),
     ...(process.platform === "win32" ? [] : ["--headless", "--no-sandbox", "--disable-gpu"]),
+    ...(mainPort ? [`--inspect=127.0.0.1:${mainPort}`] : []),
     `--user-data-dir=${path.join(directory, "profile")}`, `--remote-debugging-port=${port}`,
   ], { stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
@@ -27,6 +36,7 @@ async function startDesktop(t, options = {}) {
   child.on("exit", (code, signal) => { exit = { code, signal }; });
   child.on("error", error => { log += error.stack; });
   t.after(async () => {
+    mainSocket?.close();
     ws?.close();
     if (!exit) {
       const stopped = new Promise(resolve => child.once("exit", resolve));
@@ -134,7 +144,36 @@ async function startDesktop(t, options = {}) {
   await send("Page.enable");
   await waitFor("document.readyState === 'complete' && Boolean(window.ChoreoCore)", "Editor did not load");
   await send("Page.bringToFront");
+  let mainRequestId = 0;
+  const evaluateMain = async expression => {
+    assert.ok(mainPort, "Main-process inspection was not enabled for this test");
+    if (!mainSocket) {
+      const targets = await fetch(`http://127.0.0.1:${mainPort}/json/list`).then(response => response.json());
+      mainSocket = new WebSocket(targets[0].webSocketDebuggerUrl);
+      await new Promise((resolve, reject) => {
+        mainSocket.addEventListener("open", resolve, { once: true });
+        mainSocket.addEventListener("error", reject, { once: true });
+      });
+    }
+    const requestId = ++mainRequestId;
+    const response = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { mainSocket.removeEventListener("message", listener); reject(new Error("Main-process evaluation timed out")); }, 15000);
+      const listener = event => {
+        const result = JSON.parse(event.data);
+        if (result.id !== requestId) return;
+        clearTimeout(timer);
+        mainSocket.removeEventListener("message", listener);
+        resolve(result);
+      };
+      mainSocket.addEventListener("message", listener);
+      mainSocket.send(JSON.stringify({ id: requestId, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
+    });
+    assert.equal(response.error, undefined, JSON.stringify(response.error));
+    assert.equal(response.result.exceptionDetails, undefined, JSON.stringify(response.result.exceptionDetails));
+    return response.result.result.value;
+  };
   return { directory, send, evaluate, waitFor, click, pressKey, type, selectFile, exceptions, dialogs,
+    evaluateMain,
     setDialogResponse(value) { dialogResponse = value; } };
 }
 

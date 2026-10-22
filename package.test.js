@@ -2,7 +2,29 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createStoredZip, readStoredZip } = require("./package.js");
+const { createStoredZip, readStoredZip, snapshotBlob } = require("./package.js");
+
+test("media snapshots remain readable after the source package on disk is overwritten", async t => {
+  const fs = require("node:fs/promises");
+  const { openAsBlob } = require("node:fs");
+  const path = require("node:path");
+  const os = require("node:os");
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "formation-snapshot-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const filePath = path.join(directory, "opened.formation");
+  const bytes = Buffer.alloc(1024 * 1024 + 27, 73);
+  await fs.writeFile(filePath, bytes);
+  const original = await openAsBlob(filePath);
+  const snapshot = await snapshotBlob(original.slice(19, -7));
+  await fs.writeFile(filePath, "A different saved project");
+  await assert.rejects(original.arrayBuffer());
+  assert.deepEqual(Buffer.from(await snapshot.arrayBuffer()), bytes.subarray(19, -7));
+});
+
+test("a failed media snapshot rejects before replacing any project data", async () => {
+  const broken = { stream: () => new ReadableStream({ start(controller) { controller.error(new Error("File changed")); } }) };
+  await assert.rejects(snapshotBlob(broken), /File changed/);
+});
 
 test("stored ZIP packages round-trip text and binary entries", async () => {
   const archive = await createStoredZip([

@@ -38,6 +38,7 @@
           </button>
           <button id="export-button" class="button button-quiet" type="button">Export JSON</button>
           <button id="export-package-button" class="button button-quiet" type="button">Export complete</button>
+          <button id="recover-autosave-button" class="button button-quiet" type="button" disabled>Recover autosave…</button>
           <button id="import-button" class="button button-quiet" type="button">Import</button>
           <input id="import-input" class="visually-hidden" type="file" accept="application/json,application/zip,.json,.formation" />
           <button id="replace-local-save-button" class="button button-quiet is-hidden" type="button">
@@ -432,10 +433,24 @@
       </form>
     </dialog>
 
+    <dialog id="recovery-dialog" class="confirmation-dialog" aria-labelledby="recovery-dialog-title">
+      <form method="dialog" id="recovery-form">
+        <h2 id="recovery-dialog-title">Recover an earlier choreography</h2>
+        <p>Choose a recent version saved on this device. Restoring keeps your current audio and video; these snapshots contain choreography, not media files.</p>
+        <label for="recovery-version">Earlier version</label>
+        <select id="recovery-version" class="recovery-version"></select>
+        <div class="confirmation-actions">
+          <button id="recovery-cancel-button" class="button button-quiet" type="submit" value="cancel">Cancel</button>
+          <button id="recovery-restore-button" class="button button-primary" type="submit" value="restore">Restore version</button>
+        </div>
+      </form>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="core.js"></script>
     <script src="package.js"></script>
+    <script src="recovery.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

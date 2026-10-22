@@ -6,6 +6,15 @@ const ALLOWED_COMMANDS = new Set(["new", "open", "undo", "redo", "export-json", 
 
 contextBridge.exposeInMainWorld("FormationDesktop", Object.freeze({
   chooseProject: () => ipcRenderer.invoke("desktop:choose-project"),
+  editText: (command) => {
+    if (["undo", "redo"].includes(command)) return ipcRenderer.invoke("desktop:edit-text", command);
+  },
+  onSaveResult: (callback) => {
+    if (typeof callback !== "function") return;
+    ipcRenderer.on("desktop:save-result", (_event, state) => {
+      if (["completed", "cancelled", "interrupted"].includes(state)) callback(state);
+    });
+  },
   onCommand: (callback) => {
     if (typeof callback !== "function") return;
     ipcRenderer.on("desktop:command", (_event, command) => {

@@ -1054,6 +1054,19 @@ input:focus-visible,
   text-align: right;
 }
 
+.recovery-version {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  margin: 8px 0 20px;
+  padding: 8px;
+  color: var(--ink);
+  background: var(--field-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}
+
 .timeline-notes {
   margin: 14px 0 8px;
 }

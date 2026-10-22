@@ -61,6 +61,24 @@
     fail("Unsupported package entry data");
   }
 
+  async function snapshotBlob(blob) {
+    // Slicing a File keeps a dependency on its original path. Copy streamed
+    // bytes into managed Blobs so overwriting an opened package cannot invalidate
+    // its media. Small chunks avoid a single package-sized ArrayBuffer allocation.
+    const chunks = [];
+    const reader = blob.stream().getReader();
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        chunks.push(new Blob([value]));
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    return new Blob(chunks, { type: blob.type });
+  }
+
   async function createStoredZip(entries, options = {}) {
     const maximumBytes = Math.min(MAX_ZIP32_SIZE, Number(options.maximumBytes) || MAX_ZIP32_SIZE);
     if (!Array.isArray(entries) || entries.length === 0 || entries.length > 32) fail("Invalid package entry count");
@@ -225,7 +243,7 @@
     return result;
   }
 
-  const api = { calculateBlobCrc32, createStoredZip, isSafeEntryName, readStoredZip };
+  const api = { calculateBlobCrc32, createStoredZip, isSafeEntryName, readStoredZip, snapshotBlob };
   globalScope.FormationPackage = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : window);

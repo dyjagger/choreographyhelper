@@ -51,7 +51,7 @@
     timeToTimelinePercent,
     zoomTimelineViewport,
   } = window.ChoreoCore;
-  const { createStoredZip, readStoredZip } = window.FormationPackage;
+  const { createStoredZip, readStoredZip, snapshotBlob } = window.FormationPackage;
 
   const MAX_DANCERS = 50;
   const HISTORY_LIMIT = 50;
@@ -64,6 +64,7 @@
   const MAX_TIMELINE_ZOOM = 32;
   const MIN_TIMELINE_VIEW_SECONDS = 5;
   const STORAGE_KEY = "formation-studio-project-v1";
+  const RECOVERY_KEY = "formation-studio-recovery-v1";
   const THEME_STORAGE_KEY = "formation-studio-theme";
   const PALETTE = [
     "#7156d9",
@@ -153,6 +154,11 @@
     playIcon: document.querySelector("#play-icon"),
     projectTitle: document.querySelector("#project-title"),
     redoButton: document.querySelector("#redo-button"),
+    recoverAutosaveButton: document.querySelector("#recover-autosave-button"),
+    recoveryDialog: document.querySelector("#recovery-dialog"),
+    recoveryForm: document.querySelector("#recovery-form"),
+    recoveryVersion: document.querySelector("#recovery-version"),
+    recoveryRestoreButton: document.querySelector("#recovery-restore-button"),
     replaceLocalSaveButton: document.querySelector("#replace-local-save-button"),
     removeAudioButton: document.querySelector("#remove-audio-button"),
     recordCoordinatesButton: document.querySelector("#record-coordinates-button"),
@@ -253,6 +259,7 @@
   };
 
   let saveTimer = null;
+  let recoveryEntries = [];
   let toastTimer = null;
   let projectTitleEditSnapshot = null;
   let noteDialogDraft = null;
@@ -326,7 +333,7 @@
   }
 
   function isModalDialogOpen() {
-    return elements.confirmationDialog.open || elements.noteDialog.open;
+    return elements.confirmationDialog.open || elements.noteDialog.open || elements.recoveryDialog.open;
   }
 
   function isTransitionEditDirty() {
@@ -442,6 +449,7 @@
       control.disabled = isEditing;
     });
     elements.noteAddLine.disabled = isEditing || state.notes.length >= MAX_TIMELINE_NOTES;
+    updateRecoveryControl();
     elements.timeline.disabled = Boolean(edit);
     elements.timeInput.disabled = Boolean(edit);
     elements.durationInput.disabled = isEditing || state.audioUrl !== null || state.videoUrl !== null;
@@ -1144,6 +1152,7 @@
       return false;
     }
     state.history = pushHistory(state.history, { label, snapshot: before });
+    rememberRecoveryVersion(before.project, `Before ${label}`);
     if (options.render === false) queueSave();
     else syncAfterDataChange();
     updateHistoryControls();
@@ -1225,6 +1234,8 @@
       "Start new project",
     );
     if (!shouldReset) return;
+
+    rememberRecoveryVersion(serializeProject(), "Before starting a new project");
 
     pausePlayback();
     removeAudio(false);
@@ -2923,10 +2934,11 @@
 
   function exportProject() {
     if (!requireFinishedTransitionEdit()) return;
+    flushSave();
     const project = serializeProject();
     const payload = JSON.stringify(project, null, 2);
     downloadBlob(new Blob([payload], { type: "application/json" }), `${getSafeProjectFileName(project.projectTitle)}.formation.json`);
-    showToast("Plan exported. Audio and video files are not included.");
+    showToast("Plan export started. Audio and video files are not included.");
   }
 
   function getMediaPackageEntry(file, kind) {
@@ -2942,6 +2954,7 @@
 
   async function exportCompleteProject() {
     if (!requireFinishedTransitionEdit()) return;
+    flushSave();
     const previousText = elements.exportPackageButton.textContent;
     elements.exportPackageButton.disabled = true;
     elements.exportPackageButton.textContent = "Packing…";
@@ -2971,7 +2984,7 @@
       const archive = await createStoredZip(entries, { maximumBytes: MAX_COMPLETE_PACKAGE_BYTES });
       downloadBlob(archive, `${getSafeProjectFileName(project.projectTitle)}.formation`);
       const mediaDescription = state.audioFile || state.videoFile ? " with local media" : "";
-      showToast(`Complete project exported${mediaDescription}.`);
+      showToast(`Complete project export started${mediaDescription}.`);
     } catch (error) {
       showToast(error?.message?.includes("size limit")
         ? "The complete project is larger than the 1 GB web export limit."
@@ -3073,17 +3086,21 @@
       restoreLegacyLeftRight: elements.confirmationLegacyLayout.checked,
     });
 
-    const createMediaFile = (descriptor, fallback) => {
+    const createMediaFile = async (descriptor, fallback) => {
       if (!descriptor) return null;
       const entry = entries.get(descriptor.entry);
       return new File(
-        [entry.blob],
+        [await snapshotBlob(entry.blob)],
         normalizeImportedMediaName(descriptor.fileName, fallback),
         { type: descriptor.type || "application/octet-stream", lastModified: Date.now() },
       );
     };
-    const audioFile = createMediaFile(manifest.media.audio, "audio-track");
-    const videoFile = createMediaFile(manifest.media.video, "reference-video");
+    // Finish both copies before replacing any part of the open project.
+    const [audioFile, videoFile] = await Promise.all([
+      createMediaFile(manifest.media.audio, "audio-track"),
+      createMediaFile(manifest.media.video, "reference-video"),
+    ]);
+    rememberRecoveryVersion(serializeProject(), "Before opening a complete project");
     removeAudio(false);
     removeVideo(false);
     applyProject(upgradedProject, { clearHistory: true });
@@ -3130,10 +3147,18 @@
   }
 
   async function handleDesktopCommand(command) {
+    if (command === "undo" || command === "redo") {
+      if (isNativeEditingTarget(document.activeElement)) {
+        await window.FormationDesktop?.editText(command);
+        return;
+      }
+      if (isModalDialogOpen()) return;
+      if (command === "undo") undoDocumentEdit({ restoreFocus: true });
+      else redoDocumentEdit({ restoreFocus: true });
+      return;
+    }
     if (isModalDialogOpen()) return;
     if (command === "new") elements.newProjectButton.click();
-    else if (command === "undo") elements.undoButton.click();
-    else if (command === "redo") elements.redoButton.click();
     else if (command === "export-json") elements.exportButton.click();
     else if (command === "export-complete") elements.exportPackageButton.click();
     else if (command === "open") {
@@ -3147,11 +3172,63 @@
     document.documentElement.classList.add("is-desktop-app");
     window.FormationDesktop.onCommand(handleDesktopCommand);
     window.FormationDesktop.onOpenProject(importDesktopProject);
+    window.FormationDesktop.onSaveResult?.((result) => {
+      if (result === "completed") showToast("Project file saved successfully.");
+      else if (result === "cancelled") showToast("File save cancelled.");
+      else showToast("File save failed. Your current project is still open; please save again.");
+    });
   }
 
   function setSaveStatus(message, isError = false) {
     elements.saveStatus.textContent = message;
     elements.saveStatus.classList.toggle("is-error", isError);
+  }
+
+  function updateRecoveryControl() {
+    elements.recoverAutosaveButton.disabled = isDocumentEditOpen() || recoveryEntries.length === 0;
+  }
+
+  function rememberRecoveryVersion(project, label) {
+    const next = window.FormationRecovery.recordVersion(recoveryEntries, project, label);
+    if (next === recoveryEntries) return;
+    recoveryEntries = next;
+    // Recovery storage must never prevent saving the current project.
+    while (recoveryEntries.length) {
+      try {
+        localStorage.setItem(RECOVERY_KEY, JSON.stringify(recoveryEntries));
+        break;
+      } catch (error) {
+        if (error.name !== "QuotaExceededError" || recoveryEntries.length === 1) break;
+        recoveryEntries.shift();
+      }
+    }
+    updateRecoveryControl();
+  }
+
+  function openRecoveryDialog() {
+    if (isModalDialogOpen() || !requireFinishedTransitionEdit() || !recoveryEntries.length) return;
+    pausePlayback();
+    const current = JSON.stringify(serializeProject());
+    const versions = [...recoveryEntries].reverse().filter(entry => JSON.stringify(entry.project) !== current);
+    if (!versions.length) { showToast("There are no earlier versions to restore yet."); return; }
+    elements.recoveryVersion.replaceChildren(...versions.map(entry => {
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = `${new Date(entry.savedAt).toLocaleString()} · ${entry.project.projectTitle || "Untitled choreography"} · ${entry.label}`;
+      return option;
+    }));
+    elements.recoveryDialog.showModal();
+    elements.recoveryVersion.focus();
+  }
+
+  function restoreRecoveryVersion(event) {
+    if (event.submitter !== elements.recoveryRestoreButton) return;
+    event.preventDefault();
+    const entry = recoveryEntries.find(entry => entry.id === elements.recoveryVersion.value);
+    if (!entry) return;
+    elements.recoveryDialog.close("restore");
+    commitDocumentEdit("recover autosave", () => { replaceDocumentData(entry.project, { currentTime: 0 }); });
+    showToast("Earlier choreography restored. Undo is available; media files were kept.");
   }
 
   function flushSave() {
@@ -3166,7 +3243,18 @@
       return false;
     }
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeProject()));
+      const project = serializeProject();
+      const serialized = JSON.stringify(project);
+      try {
+        localStorage.setItem(STORAGE_KEY, serialized);
+      } catch (error) {
+        if (error.name !== "QuotaExceededError") throw error;
+        localStorage.removeItem(RECOVERY_KEY);
+        recoveryEntries = [];
+        localStorage.setItem(STORAGE_KEY, serialized);
+      }
+      rememberRecoveryVersion(project, "Autosaved choreography");
+      updateRecoveryControl();
       setSaveStatus("Saved locally");
       return true;
     } catch (error) {
@@ -3185,6 +3273,7 @@
       return;
     }
     setSaveStatus("Saving…");
+    rememberRecoveryVersion(serializeProject(), "After edit");
     clearTimeout(saveTimer);
     saveTimer = setTimeout(flushSave, 180);
   }
@@ -3376,6 +3465,8 @@
   }
 
   function bindEvents() {
+    elements.recoverAutosaveButton.addEventListener("click", openRecoveryDialog);
+    elements.recoveryForm.addEventListener("submit", restoreRecoveryVersion);
     elements.noteAddLine.addEventListener("click", event => {
       const rect = elements.noteAddLine.getBoundingClientRect();
       const viewport = getTimelineViewport();
@@ -3597,6 +3688,7 @@
   }
 
   function initialize() {
+    try { recoveryEntries = window.FormationRecovery.readHistory(localStorage.getItem(RECOVERY_KEY)); } catch { recoveryEntries = []; }
     applyTheme(document.documentElement.dataset.theme);
     elements.audioPlayer.volume = Number(elements.volumeInput.value);
     elements.videoPlayer.volume = Number(elements.videoVolumeInput.value);

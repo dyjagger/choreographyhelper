@@ -16,6 +16,7 @@ const STATIC_FILES = new Map([
   ["theme.js", "text/javascript; charset=utf-8"],
   ["core.js", "text/javascript; charset=utf-8"],
   ["package.js", "text/javascript; charset=utf-8"],
+  ["recovery.js", "text/javascript; charset=utf-8"],
   ["app.js", "text/javascript; charset=utf-8"],
 ]);
 const pendingFiles = new Map();
@@ -188,6 +189,9 @@ function configureWindowSecurity(window) {
         ? [{ name: "Formation Studio project", extensions: ["formation"] }]
         : [{ name: "Formation Studio JSON", extensions: ["json"] }],
     });
+    item.once("done", (_event, state) => {
+      if (!window.isDestroyed()) window.webContents.send("desktop:save-result", state);
+    });
   });
 }
 
@@ -243,6 +247,10 @@ else {
 
   app.whenReady().then(async () => {
     protocol.handle("formation", handleAppProtocol);
+    ipcMain.handle("desktop:edit-text", (event, command) => {
+      if (!isTrustedSender(event) || !["undo", "redo"].includes(command)) throw new Error("Invalid editing request");
+      event.sender[command]();
+    });
     ipcMain.handle("desktop:choose-project", async (event) => {
       if (!isTrustedSender(event)) throw new Error("Untrusted desktop request");
       const owner = BrowserWindow.fromWebContents(event.sender);
