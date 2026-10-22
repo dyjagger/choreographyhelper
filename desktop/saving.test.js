@@ -116,6 +116,7 @@ test("saving over an opened project preserves media, real menu Undo respects typ
     await menu("Redo formation edit");
     await app.waitFor(`document.querySelector(${JSON.stringify(selector)}).value==='Draft typing'`,"Text redo was routed to formation history");
     await menu("Undo formation edit");
+    await app.waitFor(`document.querySelector(${JSON.stringify(selector)}).value===${JSON.stringify(original)}`,"Text undo must finish before moving focus");
     await app.click("#time-input");
   }
   assert.deepEqual((await saved()).dancers,withExtra.dancers);

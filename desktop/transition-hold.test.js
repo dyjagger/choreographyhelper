@@ -61,10 +61,10 @@ test("selected dancers can replace incoming movements with bounded holds using p
   await app.click('.keyframe-chip[data-keyframe-time="10"] .keyframe-jump');
   await app.click('.dancer-row:nth-child(2) .dancer-select-button', 2);
   assert.equal(await app.evaluate("document.querySelector('#selection-count').textContent"), "2 selected");
-  await app.click("#edit-keyframe-button");
-  assert.equal(await app.evaluate("document.querySelector('#selection-count').textContent"), "2 selected", "Starting an edit must retain the group");
+  // Groups enter their preview through Hold; Edit is a single-dancer control.
   assert.equal(await app.evaluate("document.querySelector('#hold-position-button').disabled"), false);
   await app.click("#hold-position-button");
+  assert.equal(await app.evaluate("document.querySelector('#selection-count').textContent"), "2 selected", "Starting the hold preview must retain the group");
   await assertSelectedPositions(20, 70);
   assert.equal(await app.evaluate("document.querySelectorAll('.transition-position-ghost').length"), 2);
   assert.deepEqual(await app.evaluate("JSON.parse(localStorage.getItem('formation-studio-project-v1'))"), original, "A hold preview must not autosave");
