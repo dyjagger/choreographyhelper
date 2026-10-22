@@ -12,6 +12,7 @@ const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 
 test("saving over an opened project preserves media, real menu Undo respects typing, and lost edits survive restart in recovery", { timeout: process.env.FORMATION_TEST_FULL_PLAYBACK ? 360000 : 180000 }, async t => {
   const app = await startDesktop(t, { inspectMain: true });
+  await app.evaluateMain(`${electron}.BrowserWindow.getAllWindows()[0].webContents.setAudioMuted(true)`);
   const saved = async () => {
     await app.waitFor("document.querySelector('#save-status').textContent==='Saved locally'", "Autosave did not finish");
     return app.evaluate("JSON.parse(localStorage.getItem('formation-studio-project-v1'))");

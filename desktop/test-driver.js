@@ -115,9 +115,12 @@ async function startDesktop(t, options = {}) {
     assert.fail(message);
   };
   const click = async (selector, modifiers = 0) => {
-    const point = await evaluate(`(()=>{const element=document.querySelector(${JSON.stringify(selector)});
+    const point = await evaluate(`(async()=>{const element=document.querySelector(${JSON.stringify(selector)});
       if(!element)throw Error('Missing click target');element.scrollIntoView({block:'center',inline:'nearest'});
-      const r=element.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};})()`);
+      await Promise.race([new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),new Promise(resolve=>setTimeout(resolve,100))]);
+      const r=element.getBoundingClientRect();const x=r.left+r.width/2,y=r.top+r.height/2;
+      if(!element.contains(document.elementFromPoint(x,y)))throw Error('Click target is obscured: '+${JSON.stringify(selector)});
+      return {x,y};})()`);
     await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point, modifiers });
     await send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, modifiers, button: "left", buttons: 1, clickCount: 1 });
     await send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, modifiers, button: "left", buttons: 0, clickCount: 1 });

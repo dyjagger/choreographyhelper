@@ -16,14 +16,19 @@ test("timeline notes anchor exactly, wrap without overlap, survive history and m
   };
   const clickLine = async fraction => {
     const point = await app.evaluate(`(()=>{const line=document.querySelector('#note-add-line');line.scrollIntoView({block:'center'});
+      window.deliveredNoteClick=null;line.addEventListener('click',event=>{const r=line.getBoundingClientRect();window.deliveredNoteClick={x:event.clientX,left:r.left,width:r.width,
+        start:Number(document.querySelector('#timeline').min),end:Number(document.querySelector('#timeline').max)};},{once:true,capture:true});
       const rect=line.getBoundingClientRect();return {x:Math.round(rect.left+rect.width*${fraction}),y:Math.round(rect.top+14),left:rect.left,width:rect.width,
         start:Number(document.querySelector('#timeline').min),end:Number(document.querySelector('#timeline').max)};})()`);
-    clickLine.expectedTime = Math.round((point.start + (point.x - point.left) / point.width * (point.end - point.start)) * 1000000) / 1000000;
     const coordinates = { x: point.x, y: point.y };
     await app.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...coordinates });
     await app.send("Input.dispatchMouseEvent", { type: "mousePressed", ...coordinates, button: "left", buttons: 1, clickCount: 1 });
     await app.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...coordinates, button: "left", buttons: 0, clickCount: 1 });
     await app.waitFor("document.querySelector('#note-dialog').open", "Clicking the dashed line did not open the note editor");
+    const delivered=await app.evaluate("window.deliveredNoteClick");
+    assert.ok(delivered,"The note must be opened by the real mouse click");
+    // Windows display scaling can quantize the delivered CSS coordinate.
+    clickLine.expectedTime=Math.round((delivered.start+(delivered.x-delivered.left)/delivered.width*(delivered.end-delivered.start))*1000000)/1000000;
     return app.evaluate("Number(document.querySelector('#note-time-input').value)");
   };
   const saveNote = async text => {
